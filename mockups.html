@@ -1,0 +1,344 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Round Radar mockups</title>
+<style>
+  :root {
+    --bg: #f4f5f3; --panel: #ffffff; --ink: #1b1f1c; --muted: #5d665f; --line: #d5d9d4;
+    --accent: #14753a; --bezel: #2a2d2b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #111412; --panel: #1a1e1b; --ink: #e8ece8; --muted: #9aa49c; --line: #2f3531;
+            --accent: #5fe08f; --bezel: #3a3f3b; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  main { max-width: 1100px; margin: 0 auto; padding: 24px 16px 64px; }
+  h1 { font-size: 28px; margin: 0 0 4px; }
+  h2 { font-size: 21px; margin: 44px 0 6px; padding-top: 16px; border-top: 1px solid var(--line); }
+  p { margin: 6px 0 12px; max-width: 70ch; }
+  .muted { color: var(--muted); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 24px 20px; margin-top: 16px; }
+  figure { margin: 0; }
+  figure svg.dev { width: 100%; max-width: 260px; height: auto; display: block; margin: 0 auto;
+                   border-radius: 50%; border: 7px solid var(--bezel); background: #000; }
+  figcaption { margin-top: 10px; text-align: center; font-size: 14px; }
+  figcaption b { display: block; font-size: 15px; }
+  figcaption span { color: var(--muted); }
+  .phone { width: 100%; max-width: 230px; margin: 0 auto; border: 7px solid var(--bezel); border-radius: 26px;
+           background: #fff; color: #111; padding: 18px 14px 20px; font-size: 13px; }
+  .phone h3 { margin: 0 0 10px; font-size: 16px; }
+  .phone label { display: block; margin: 10px 0 3px; font-weight: 600; }
+  .phone .f { border: 1px solid #b9c0ba; border-radius: 7px; padding: 7px 9px; background: #fafbfa; }
+  .phone .btn { margin-top: 16px; background: #14753a; color: #fff; text-align: center; border-radius: 8px; padding: 9px; font-weight: 600; }
+  .phone small { color: #5d665f; }
+  .flow { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px; overflow-x: auto; }
+  .flow svg { min-width: 760px; width: 100%; height: auto; display: block; }
+  .flow .box { fill: var(--bg); stroke: var(--ink); stroke-width: 1.5; }
+  .flow .dec { fill: var(--bg); stroke: var(--accent); stroke-width: 2; }
+  .flow text { fill: var(--ink); font: 14px -apple-system, "Segoe UI", sans-serif; }
+  .flow text.t { font-weight: 700; }
+  .flow text.s { font-size: 11.5px; fill: var(--muted); }
+  .flow text.l { font-size: 12px; fill: var(--accent); font-weight: 600; }
+  .flow .a { stroke: var(--ink); stroke-width: 1.5; fill: none; }
+  .flow .d { stroke-dasharray: 5 4; }
+  .flow marker path { fill: var(--ink); }
+  table { border-collapse: collapse; width: 100%; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; font-size: 14.5px; }
+  .tw { overflow-x: auto; }
+  th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: 13px; color: var(--muted); font-weight: 600; }
+  tr:last-child td { border-bottom: 0; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Round Radar: mockups and UI flow</h1>
+  <p class="muted">Design mockups for the 2.1" round screen (480×480), drawn at about life size on a desktop.
+  The coastline, aircraft and QR code are made up for illustration. Nothing here is built yet.</p>
+
+  <h2>UI flow</h2>
+  <p>The device opens on whichever screen was last picked and stays there. It never switches by itself.</p>
+  <div class="flow">
+    <svg viewBox="0 0 970 480" role="img" aria-label="Flow between setup, scope, clock, aircraft detail and settings">
+      <defs>
+        <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 Z"/></marker>
+      </defs>
+      <!-- row 1 -->
+      <rect class="box" x="20" y="50" width="150" height="64" rx="8"/>
+      <text class="t" x="95" y="78" text-anchor="middle">Power on</text>
+      <text class="s" x="95" y="97" text-anchor="middle">start-up screen</text>
+
+      <rect class="dec" x="215" y="50" width="150" height="64" rx="32"/>
+      <text class="t" x="290" y="78" text-anchor="middle">Wi-Fi saved?</text>
+      <text class="s" x="290" y="97" text-anchor="middle">from an earlier setup</text>
+
+      <rect class="box" x="410" y="50" width="150" height="64" rx="8"/>
+      <text class="t" x="485" y="78" text-anchor="middle">Setup: QR code</text>
+      <text class="s" x="485" y="97" text-anchor="middle">own setup network</text>
+
+      <rect class="box" x="605" y="50" width="150" height="64" rx="8"/>
+      <text class="t" x="680" y="78" text-anchor="middle">Phone form</text>
+      <text class="s" x="680" y="97" text-anchor="middle">Wi-Fi, password, postcode</text>
+
+      <rect class="box" x="800" y="50" width="150" height="64" rx="8"/>
+      <text class="t" x="875" y="78" text-anchor="middle">Connecting</text>
+      <text class="s" x="875" y="97" text-anchor="middle">joins Wi-Fi, finds place</text>
+
+      <path class="a" d="M170,82 H213" marker-end="url(#ah)"/>
+      <path class="a" d="M365,82 H408" marker-end="url(#ah)"/>
+      <text class="l" x="386" y="74" text-anchor="middle">no</text>
+      <path class="a" d="M560,82 H603" marker-end="url(#ah)"/>
+      <text class="l" x="582" y="74" text-anchor="middle">scan</text>
+      <path class="a" d="M755,82 H798" marker-end="url(#ah)"/>
+      <text class="l" x="777" y="74" text-anchor="middle">save</text>
+      <path class="a" d="M875,50 V24 H485 V48" marker-end="url(#ah)"/>
+      <text class="l" x="680" y="17" text-anchor="middle">Wi-Fi or postcode failed: back to setup, earlier saved details kept</text>
+
+      <!-- row 2 -->
+      <rect class="box" x="215" y="220" width="150" height="64" rx="8"/>
+      <text class="t" x="290" y="248" text-anchor="middle">Scope</text>
+      <text class="s" x="290" y="267" text-anchor="middle">swipe sideways: range</text>
+
+      <rect class="box" x="605" y="220" width="150" height="64" rx="8"/>
+      <text class="t" x="680" y="248" text-anchor="middle">Clock</text>
+      <text class="s" x="680" y="267" text-anchor="middle">12 or 24 hour</text>
+
+      <path class="a" d="M270,114 V218" marker-end="url(#ah)"/>
+      <text class="l" x="262" y="150" text-anchor="end">yes: opens the</text>
+      <text class="l" x="262" y="166" text-anchor="end">screen last picked</text>
+      <path class="a" d="M875,114 V170 H320 V218" marker-end="url(#ah)"/>
+      <text class="l" x="760" y="162" text-anchor="middle">connected</text>
+      <path class="a" d="M365,252 H603" marker-start="url(#ah)" marker-end="url(#ah)"/>
+      <text class="l" x="424" y="243" text-anchor="middle">swipe up or down</text>
+
+      <!-- row 3 -->
+      <rect class="box" x="20" y="390" width="150" height="64" rx="8"/>
+      <text class="t" x="95" y="418" text-anchor="middle">Aircraft detail</text>
+      <text class="s" x="95" y="437" text-anchor="middle">updates live</text>
+
+      <rect class="box" x="410" y="390" width="150" height="64" rx="8"/>
+      <text class="t" x="485" y="418" text-anchor="middle">Settings</text>
+      <text class="s" x="485" y="437" text-anchor="middle">Done: back where you were</text>
+
+      <path class="a" d="M215,252 H95 V388" marker-start="url(#ah)" marker-end="url(#ah)"/>
+      <text class="l" x="103" y="318">tap an aircraft</text>
+      <text class="l" x="103" y="334">tap again: back</text>
+      <path class="a" d="M320,284 V422 H408" marker-start="url(#ah)" marker-end="url(#ah)"/>
+      <text class="l" x="328" y="350">long press</text>
+      <path class="a" d="M680,284 V422 H562" marker-start="url(#ah)" marker-end="url(#ah)"/>
+      <text class="l" x="688" y="350">long press</text>
+      <path class="a d" d="M485,390 V116" marker-end="url(#ah)"/>
+      <text class="l" x="493" y="318">"Wi-Fi &amp; place"</text>
+      <text class="l" x="493" y="334">restarts setup</text>
+    </svg>
+  </div>
+
+  <h2>Gestures</h2>
+  <div class="tw"><table>
+    <tr><th>Gesture</th><th>On the scope</th><th>On the clock</th><th>On aircraft detail</th><th>On settings</th></tr>
+    <tr><td><b>Tap</b></td><td>Opens the nearest aircraft (within about 3 mm)</td><td>Nothing</td><td>Closes it</td><td>Presses a button</td></tr>
+    <tr><td><b>Swipe sideways</b></td><td>Steps the range: left for wider, right for closer (10, 25, 50, 100 km)</td><td>Nothing</td><td>Nothing</td><td>Nothing</td></tr>
+    <tr><td><b>Swipe up or down</b></td><td>Goes to the clock</td><td>Goes to the scope</td><td>Nothing</td><td>Nothing</td></tr>
+    <tr><td><b>Long press</b> (1 second)</td><td>Opens settings</td><td>Opens settings</td><td>Nothing</td><td>Nothing</td></tr>
+  </table></div>
+  <p class="muted">The screen picked, the range and every setting are remembered through a restart.</p>
+
+  <div id="sections"></div>
+
+  <h2>Settings on the device</h2>
+  <div class="tw"><table>
+    <tr><th>Setting</th><th>Choices</th><th>Default</th></tr>
+    <tr><td>Brightness</td><td>10% to 100% in steps of 10</td><td>70%</td></tr>
+    <tr><td>Clock</td><td>12 hour or 24 hour</td><td>24 hour</td></tr>
+    <tr><td>Night dim</td><td>Off or On, with a From hour and an Until hour on its own page. When on, the screen drops to 10% between them</td><td>On, 22:00 to 07:00</td></tr>
+    <tr><td>Ping</td><td>Off or On. A short buzzer note when an aircraft comes within 5 km</td><td>Off</td></tr>
+    <tr><td>Wi-Fi &amp; place</td><td>Restarts the phone setup. Saved details stay until new ones connect</td><td></td></tr>
+  </table></div>
+  <p class="muted">The 5 km ping distance is fixed in this version. Settings and its night page always show at the chosen brightness, so they can be read at night.</p>
+</main>
+
+<script>
+const G = '#3dff7a', MID = '#22a552', DIM = '#14602f', AMB = '#ffc94d', RED = '#ff5a4d', F = 'ui-monospace, Menlo, Consolas, monospace';
+let uid = 0;
+const P = (a, r) => { const t = a * Math.PI / 180; return [240 + r * Math.sin(t), 240 - r * Math.cos(t)]; };
+const T = (x, y, s, size, o = {}) =>
+  `<text x="${x}" y="${y}" font-family="${F}" font-size="${size}" fill="${o.fill || G}" text-anchor="${o.anchor || 'middle'}" font-weight="${o.w || 400}" opacity="${o.op || 1}" letter-spacing="${o.ls || 0}">${s}</text>`;
+function dev(inner, label, dim = 1) {
+  const id = 'c' + (++uid);
+  return `<svg class="dev" viewBox="0 0 480 480" role="img" aria-label="${label}"><defs><clipPath id="${id}"><circle cx="240" cy="240" r="239"/></clipPath></defs><circle cx="240" cy="240" r="240" fill="#000"/><g clip-path="url(#${id})" opacity="${dim}">${inner}</g></svg>`;
+}
+
+/* ---------- scope ---------- */
+const COAST = 'M-700,300 C-500,340 -300,280 -100,330 S60,320 140,340 S210,300 260,318 S330,360 380,335 S520,290 700,330 S1000,300 1200,350';
+const ISLE = 'M120,400 C150,385 200,388 225,402 C235,418 200,432 165,428 C135,426 110,415 120,400 Z';
+const NORTH = 'M-900,-160 C-500,-240 -100,-70 250,-180 S900,-110 1300,-260';
+function scope(o) {
+  const s = o.scale || 1, sweep = o.sweep ?? 55, col = o.stale ? '#6b736d' : G;
+  let h = '';
+  if (o.sweepOn !== false) for (let i = 0; i < 40; i++) {
+    const a = sweep - i * 3, [x1, y1] = P(a, 236), [x2, y2] = P(a - 3, 236);
+    h += `<path d="M240,240 L${x1.toFixed(1)},${y1.toFixed(1)} A236,236 0 0 0 ${x2.toFixed(1)},${y2.toFixed(1)} Z" fill="${G}" opacity="${(0.30 * Math.pow(1 - i / 40, 1.6)).toFixed(3)}"/>`;
+  }
+  h += `<g transform="translate(240 240) scale(${s}) translate(-240 -240)" fill="none" stroke="${MID}" stroke-width="1.6">` +
+       [COAST, ISLE, NORTH].map(d => `<path d="${d}" vector-effect="non-scaling-stroke"/>`).join('') + `</g>`;
+  h += `<circle cx="240" cy="240" r="232" fill="none" stroke="${DIM}" stroke-width="1.5"/><circle cx="240" cy="240" r="116" fill="none" stroke="${DIM}" stroke-width="1.5"/>`;
+  h += `<path d="M232,240 H248 M240,232 V248" stroke="${G}" stroke-width="1.5"/>`;
+  if (o.sweepOn !== false) { const [x, y] = P(sweep, 236); h += `<line x1="240" y1="240" x2="${x}" y2="${y}" stroke="${G}" stroke-width="2"/>`; }
+  h += T(246, 120, o.half, 14, { fill: MID, anchor: 'start' });
+  for (const p of (o.planes || [])) {
+    const x = 240 + p.x * s, y = 240 + p.y * s;
+    const brg = (Math.atan2(p.x, -p.y) * 180 / Math.PI + 360) % 360;
+    const age = ((sweep - brg) % 360 + 360) % 360;
+    const op = o.stale ? 0.8 : (1 - 0.7 * age / 360).toFixed(2);
+    const t = p.t * Math.PI / 180;
+    let g = '';
+    for (let k = 1; k <= 4; k++) g += `<circle cx="${(x - Math.sin(t) * 10 * k).toFixed(1)}" cy="${(y + Math.cos(t) * 10 * k).toFixed(1)}" r="1.8" fill="${col}" opacity="${(0.7 - k * 0.14).toFixed(2)}"/>`;
+    g += `<g transform="translate(${x.toFixed(1)} ${y.toFixed(1)}) rotate(${p.t})"><path d="M0,-10 L7,8 L0,4 L-7,8 Z" fill="${col}"/></g>`;
+    if (p.sel) g += `<circle cx="${x}" cy="${y}" r="17" fill="none" stroke="#fff" stroke-width="1.5"/>`;
+    if (p.c) g += T(x, y + 27, p.c, 15, { fill: col });
+    h += `<g opacity="${op}">${g}</g>`;
+  }
+  if (o.top) h += T(240, 52, o.top, 17, { fill: o.topFill || G });
+  if (o.msg) h += `<rect x="90" y="205" width="300" height="${o.msg2 ? 74 : 48}" rx="10" fill="#000" stroke="${o.msgFill || AMB}" stroke-width="1.5"/>` +
+                  T(240, 236, o.msg, 17, { fill: o.msgFill || AMB }) + (o.msg2 ? T(240, 262, o.msg2, 15, { fill: o.msgFill || AMB }) : '');
+  h += T(240, 436, o.range, 20, { fill: AMB, w: 700 });
+  for (let i = 0; i < 4; i++) h += `<circle cx="${204 + i * 24}" cy="455" r="5" fill="${i === o.ri ? AMB : 'none'}" stroke="${i === o.ri ? AMB : '#6b736d'}" stroke-width="1.5"/>`;
+  return h;
+}
+const NEAR = [
+  { x: -70, y: -95, t: 110, c: 'BAW283' }, { x: 120, y: -40, t: 250, c: 'EZY67KD' },
+  { x: 60, y: 130, t: 20, c: 'G-BXYZ' }, { x: -150, y: 60, t: 75, c: 'RYR4TF' },
+];
+const FAR = NEAR.concat([
+  { x: -520, y: -300, t: 140 }, { x: 430, y: -470, t: 200 }, { x: 610, y: 120, t: 290 }, { x: -300, y: 520, t: 10 },
+  { x: 250, y: 420, t: 330 }, { x: -640, y: 220, t: 60 }, { x: 80, y: -700, t: 180 }, { x: 700, y: -250, t: 240 },
+  { x: -420, y: -620, t: 120 }, { x: 380, y: 660, t: 350 },
+]).map(p => ({ ...p, c: null }));
+
+/* ---------- seven-segment clock ---------- */
+const SEG = { 0: 'abcdef', 1: 'bc', 2: 'abdeg', 3: 'abcdg', 4: 'bcfg', 5: 'acdfg', 6: 'acdefg', 7: 'abc', 8: 'abcdefg', 9: 'abcdfg', ' ': '' };
+function digit(x, y, w, h, ch) {
+  const t = 15, v = h / 2 - 1.5 * t, on = SEG[ch];
+  const r = { a: [x + t, y, w - 2 * t, t], b: [x + w - t, y + t, t, v], c: [x + w - t, y + h / 2 + t / 2, t, v], d: [x + t, y + h - t, w - 2 * t, t],
+              e: [x, y + h / 2 + t / 2, t, v], f: [x, y + t, t, v], g: [x + t, y + h / 2 - t / 2, w - 2 * t, t] };
+  return Object.keys(r).map(k => `<rect x="${r[k][0]}" y="${r[k][1]}" width="${r[k][2]}" height="${r[k][3]}" rx="5" fill="${G}" opacity="${on.includes(k) ? 1 : 0.06}"/>`).join('');
+}
+function clock(o) {
+  let h = '';
+  for (let i = 0; i < 60; i++) {
+    const [x1, y1] = P(i * 6, 232), [x2, y2] = P(i * 6, i % 5 ? 222 : 214);
+    h += `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${G}" stroke-width="${i % 5 ? 2 : 3}" opacity="${i <= o.sec ? 1 : 0.16}"/>`;
+  }
+  const d = o.digits, y = 165, hh = 130, w = 70;
+  h += digit(60, y, w, hh, d[0]) + digit(146, y, w, hh, d[1]) + digit(264, y, w, hh, d[2]) + digit(350, y, w, hh, d[3]);
+  h += `<rect x="232" y="${y + 36}" width="16" height="16" rx="4" fill="${G}"/><rect x="232" y="${y + 80}" width="16" height="16" rx="4" fill="${G}"/>`;
+  if (o.ampm) h += T(240, 140, o.ampm, 24, { w: 700, ls: 2 });
+  h += T(240, 348, o.date, 26, { ls: 2 });
+  h += T(240, 396, o.foot, 18, { fill: o.footFill || MID });
+  return h;
+}
+
+/* ---------- other screens ---------- */
+function qr() {
+  let s = 7, m = '', seed = 11; const n = 25, rnd = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+  const finder = (r, c) => (r < 7 && c < 7) || (r < 7 && c >= n - 7) || (r >= n - 7 && c < 7);
+  for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) {
+    let on;
+    if (finder(r, c)) { const rr = r >= n - 7 ? r - (n - 7) : r, cc = c >= n - 7 ? c - (n - 7) : c; on = rr === 0 || rr === 6 || cc === 0 || cc === 6 || (rr > 1 && rr < 5 && cc > 1 && cc < 5); }
+    else on = rnd() > 0.52;
+    if (on) m += `<rect x="${152 + c * s}" y="${142 + r * s}" width="${s}" height="${s}" fill="#000"/>`;
+  }
+  return `<rect x="140" y="130" width="${n * s + 24}" height="${n * s + 24}" rx="6" fill="#fff"/>` + m;
+}
+const setupQR = () => T(240, 78, 'SET UP', 26, { w: 700, ls: 3 }) + T(240, 108, 'Scan with your phone', 17, { fill: MID }) + qr() +
+  T(240, 362, 'or join Wi-Fi', 16, { fill: MID }) + T(240, 388, 'Round Radar', 22, { w: 700 }) + T(240, 420, 'then open 192.168.4.1', 15, { fill: MID });
+const splash = () => `<circle cx="240" cy="200" r="70" fill="none" stroke="${DIM}" stroke-width="2"/><circle cx="240" cy="200" r="35" fill="none" stroke="${DIM}" stroke-width="2"/>` +
+  `<line x1="240" y1="200" x2="${240 + 70 * Math.sin(0.9)}" y2="${200 - 70 * Math.cos(0.9)}" stroke="${G}" stroke-width="3"/>` +
+  T(240, 320, 'ROUND RADAR', 28, { w: 700, ls: 4 }) + T(240, 356, 'Joining HomeWiFi', 18, { fill: MID }) + T(240, 420, 'v0.1', 14, { fill: DIM });
+const connecting = () => T(240, 150, 'CONNECTING', 26, { w: 700, ls: 3 }) + T(240, 215, 'Wi-Fi  HomeWiFi', 18) + T(240, 215 + 34, 'joined', 17, { fill: MID }) +
+  T(240, 300, 'Place  SW1A 1AA', 18) + T(240, 334, 'looking up', 17, { fill: AMB });
+const failed = () => T(240, 130, "COULDN'T JOIN", 26, { w: 700, ls: 2, fill: RED }) + T(240, 200, 'HomeWiFi', 22) +
+  T(240, 250, 'Check the password', 17, { fill: AMB }) + T(240, 276, 'and try again', 17, { fill: AMB }) +
+  T(240, 350, 'Back to setup in 10 s', 16, { fill: MID });
+function detail(lost) {
+  const rows = [['Altitude', '34,000 ft'], ['Speed', '480 kt'], ['Heading', '110° ESE'], ['Climb', 'level'], ['Distance', '12 km NW']];
+  let h = T(240, 92, 'BAW283', 44, { w: 700, fill: AMB, ls: 2 }) + T(240, 128, 'B77W  G-STBH', 19);
+  h += `<line x1="90" y1="150" x2="390" y2="150" stroke="${DIM}" stroke-width="1.5"/>`;
+  rows.forEach((r, i) => { h += T(98, 190 + i * 40, r[0], 19, { anchor: 'start', fill: MID }) + T(382, 190 + i * 40, r[1], 21, { anchor: 'end', w: 700 }); });
+  h += lost ? T(240, 400, 'Signal lost', 16, { fill: AMB }) + T(240, 428, 'last known values', 15, { fill: AMB })
+            : T(240, 412, 'Tap to close', 16, { fill: MID });
+  return h;
+}
+function settings() {
+  const row = (y, label) => T(84, y + 7, label, 19, { anchor: 'start' });
+  const pill = (x, y, w, s, on) => `<rect x="${x}" y="${y - 20}" width="${w}" height="40" rx="9" fill="${on ? G : 'none'}" stroke="${on ? G : MID}" stroke-width="1.5"/>` + T(x + w / 2, y + 6, s, 18, { fill: on ? '#000' : G, w: on ? 700 : 400 });
+  let h = T(240, 66, 'SETTINGS', 22, { w: 700, ls: 3 });
+  h += row(118, 'Brightness') + pill(252, 118, 42, '−', false) + T(326, 124, '70%', 17) + pill(358, 118, 42, '+', false);
+  h += row(172, 'Clock') + pill(252, 172, 72, '12h', false) + pill(328, 172, 72, '24h', true);
+  h += row(226, 'Night dim') + pill(252, 226, 148, '22-07 >', false);
+  h += row(280, 'Ping') + pill(252, 280, 72, 'Off', true) + pill(328, 280, 72, 'On', false);
+  h += pill(130, 342, 220, 'Wi-Fi & place', false);
+  h += pill(180, 402, 120, 'Done', true);
+  return h;
+}
+
+function night() {
+  const row = (y, label) => T(84, y + 7, label, 19, { anchor: 'start' });
+  const pill = (x, y, w, s, on) => `<rect x="${x}" y="${y - 20}" width="${w}" height="40" rx="9" fill="${on ? G : 'none'}" stroke="${on ? G : MID}" stroke-width="1.5"/>` + T(x + w / 2, y + 6, s, 18, { fill: on ? '#000' : G, w: on ? 700 : 400 });
+  let h = T(240, 66, 'NIGHT DIM', 22, { w: 700, ls: 3 });
+  h += row(136, 'Night dim') + pill(252, 136, 72, 'Off', false) + pill(328, 136, 72, 'On', true);
+  h += row(206, 'From') + pill(214, 206, 42, '\u2212', false) + T(307, 213, '22:00', 19) + pill(358, 206, 42, '+', false);
+  h += row(276, 'Until') + pill(214, 276, 42, '\u2212', false) + T(307, 283, '07:00', 19) + pill(358, 276, 42, '+', false);
+  h += T(240, 340, 'Dims the screen to 10%', 16, { fill: MID });
+  h += pill(180, 402, 120, 'Back', true);
+  return h;
+}
+
+const phoneForm = `<div class="phone"><h3>Round Radar setup</h3>
+  <label>Wi-Fi network</label><div class="f">HomeWiFi &#9662;</div>
+  <label>Password</label><div class="f">&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;</div>
+  <label>Postcode</label><div class="f">SW1A 1AA</div>
+  <small>Used once to place the radar. UK postcodes only.</small>
+  <div class="btn">Save and connect</div></div>`;
+const phoneDone = `<div class="phone"><h3>Saved</h3><p style="margin:0 0 10px">The display is now joining <b>HomeWiFi</b>.</p>
+  <p style="margin:0 0 10px">Watch the round screen. If it cannot join, it will show this setup network again.</p>
+  <small>You can close this page.</small></div>`;
+
+const sections = [
+  { title: 'Start-up and setup', note: 'Setup runs the first time, or when "Wi-Fi & place" is pressed in settings. The form is one page with three fields and is filled in on a phone, because the round screen is too small for a keyboard.', screens: [
+    { b: 'Start-up', s: 'Up to 12 seconds while joining saved Wi-Fi, then the last screen whether or not it joined', svg: dev(splash(), 'Start-up screen') },
+    { b: 'Setup: QR code', s: 'First use, or restarted from settings (then a long press cancels)', svg: dev(setupQR(), 'Setup QR code screen') },
+    { b: 'Phone form', s: 'Opens after scanning the code', html: phoneForm },
+    { b: 'Phone: saved', s: 'What the phone shows after Save', html: phoneDone },
+    { b: 'Connecting', s: 'Joins Wi-Fi, then looks up the postcode', svg: dev(connecting(), 'Connecting screen') },
+    { b: 'Could not join', s: 'Returns to the QR code; old details kept', svg: dev(failed(), 'Could not join screen') },
+  ] },
+  { title: 'Radar scope', note: 'The sweep turns continuously. Coastline and aircraft brighten as it passes and fade behind it. North is up.', screens: [
+    { b: 'Scope, 25 km', s: 'Tap an aircraft for its details', svg: dev(scope({ planes: NEAR, range: '25 km', ri: 1, half: '12', top: '4 aircraft' }), 'Scope at 25 km') },
+    { b: 'Scope, 100 km', s: 'After swiping sideways twice. Labels drop out when crowded', svg: dev(scope({ planes: FAR, scale: 0.25, sweep: 200, range: '100 km', ri: 3, half: '50', top: '14 aircraft' }), 'Scope at 100 km') },
+    { b: 'Aircraft detail', s: 'Fills the screen and updates live', svg: dev(detail(false), 'Aircraft detail') },
+    { b: 'Detail: signal lost', s: 'Aircraft missing from the feed; closes after three misses', svg: dev(detail(true), 'Aircraft detail with signal lost') },
+    { b: 'Empty sky', s: 'Sweep keeps turning', svg: dev(scope({ planes: [], sweep: 300, range: '25 km', ri: 1, half: '12', top: 'No aircraft in range', topFill: MID }), 'Scope with no aircraft') },
+    { b: 'Old data', s: 'Feed not answering: aircraft turn grey, then vanish after 10 minutes', svg: dev(scope({ planes: NEAR, stale: true, sweep: 130, range: '25 km', ri: 1, half: '12', top: 'Aircraft data 2 min old', topFill: AMB }), 'Scope with stale data') },
+    { b: 'No Wi-Fi', s: 'Sweep stops. Recovers by itself when Wi-Fi returns', svg: dev(scope({ planes: [], sweepOn: false, range: '25 km', ri: 1, half: '12', msg: 'No Wi-Fi', msg2: 'trying again' }), 'Scope with no Wi-Fi') },
+  ] },
+  { title: 'Clock', note: 'Seven-segment digits, the date, and a ring of 60 marks that fills through each minute. The foot line shows the aircraft count, so the clock still hints at the sky.', screens: [
+    { b: 'Clock, 24 hour', s: 'The default', svg: dev(clock({ digits: '1427', sec: 38, date: 'TUE 10 NOV', foot: '4 aircraft in range' }), 'Clock in 24 hour form') },
+    { b: 'Clock, 12 hour', s: 'Set in settings. No leading zero', svg: dev(clock({ digits: ' 227', sec: 38, ampm: 'PM', date: 'TUE 10 NOV', foot: '4 aircraft in range' }), 'Clock in 12 hour form') },
+    { b: 'Clock, no Wi-Fi', s: 'Time kept by the clock chip', svg: dev(clock({ digits: '1427', sec: 12, date: 'TUE 10 NOV', foot: 'No Wi-Fi', footFill: AMB }), 'Clock with no Wi-Fi') },
+    { b: 'Night dim', s: '22:00 to 07:00, when switched on', svg: dev(clock({ digits: '2314', sec: 51, date: 'TUE 10 NOV', foot: '1 aircraft in range' }), 'Clock dimmed at night', 0.28) },
+  ] },
+  { title: 'Settings', note: 'Opened by a long press from the scope or the clock. Every button is about 4.5 mm tall on the real screen.', screens: [
+    { b: 'Settings', s: 'Done returns to the screen you came from', svg: dev(settings(), 'Settings screen') },
+    { b: 'Night dim', s: 'Opened from the Night dim row. Hours step one at a time', svg: dev(night(), 'Night dim page') },
+  ] },
+];
+document.getElementById('sections').innerHTML = sections.map(sec =>
+  `<h2>${sec.title}</h2><p>${sec.note}</p><div class="grid">` +
+  sec.screens.map(x => `<figure>${x.svg || x.html}<figcaption><b>${x.b}</b><span>${x.s}</span></figcaption></figure>`).join('') + `</div>`).join('');
+</script>
+</body>
+</html>
