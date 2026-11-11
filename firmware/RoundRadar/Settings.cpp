@@ -21,6 +21,8 @@ void Settings_Load() {
   cfg.nightOn   = prefs.getBool("night", true);
   cfg.nightFrom = prefs.getUChar("nfrom", 22);
   cfg.nightTo   = prefs.getUChar("nto", 7);
+  cfg.nightLevel = prefs.getUChar("nlevel", 10);
+  cfg.nightRed  = prefs.getBool("nred", false);
   cfg.ping      = prefs.getBool("ping", false);
   prefs.end();
 
@@ -30,6 +32,13 @@ void Settings_Load() {
   if (cfg.bright < 10 || cfg.bright > 100) cfg.bright = 70;
   if (cfg.nightFrom > 23) cfg.nightFrom = 22;
   if (cfg.nightTo > 23) cfg.nightTo = 7;
+  if (cfg.nightLevel < 1 || cfg.nightLevel > 50) cfg.nightLevel = 10;
+}
+
+void Settings_Erase() {
+  prefs.begin("rr", false);
+  prefs.clear();
+  prefs.end();
 }
 
 void Settings_Save() {
@@ -47,6 +56,8 @@ void Settings_Save() {
   prefs.putBool("night", cfg.nightOn);
   prefs.putUChar("nfrom", cfg.nightFrom);
   prefs.putUChar("nto", cfg.nightTo);
+  prefs.putUChar("nlevel", cfg.nightLevel);
+  prefs.putBool("nred", cfg.nightRed);
   prefs.putBool("ping", cfg.ping);
   prefs.end();
 }

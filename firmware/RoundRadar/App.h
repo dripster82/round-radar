@@ -7,12 +7,12 @@
 // RGB565 colours (the same palette as mockups.html).
 #define C_BLACK 0x0000
 #define C_WHITE 0xFFFF
-#define C_GREEN 0x3FEF   // #3dff7a
-#define C_MID   0x252A   // #22a552
-#define C_DIM   0x1305   // #14602f
-#define C_AMBER 0xFE49   // #ffc94d
 #define C_RED   0xFAC9   // #ff5a4d
-#define C_GREY  0x6B8D   // #6b736d
+// These five follow the theme: scope green by day, and red in the night hours when the
+// night colour is set to red (red light is kinder to eyes in the dark).
+extern uint16_t C_GREEN, C_MID, C_DIM, C_AMBER, C_GREY;
+void Theme_Set(bool red);
+bool Theme_Red();
 
 extern Canvas16* gfx;
 extern const float RANGES_KM[RANGE_COUNT];
@@ -31,11 +31,14 @@ struct Settings {
   bool    nightOn;
   uint8_t nightFrom;    // hour 0..23
   uint8_t nightTo;      // hour 0..23
+  uint8_t nightLevel;   // brightness in the night hours, percent
+  bool    nightRed;     // red instead of green in the night hours
   bool    ping;
 };
 extern Settings cfg;
 void Settings_Load();
 void Settings_Save();
+void Settings_Erase();                 // factory reset: forget everything saved
 
 // ---------------------------------------------------------------- aircraft --
 struct Aircraft {
@@ -49,6 +52,9 @@ struct Aircraft {
   char  hex[8];
   char  type[10];
   char  reg[12];
+  char  desc[32];       // "BOEING 737 MAX 8"
+  char  op[26];         // owner or operator, where the feed knows it
+  char  squawk[6];
   uint8_t trailN;
   float trailLat[TRAIL_N], trailLon[TRAIL_N];   // newest first
 };
@@ -57,13 +63,43 @@ struct Aircraft {
 void     Net_Begin();                 // starts the background task (core 0)
 void     Net_SetPaused(bool paused);  // true during phone setup
 void     Net_SetScopeActive(bool on); // fast polling only while the scope shows
+void     Net_SetResting(bool on);     // night rest: no downloads until touched
+bool     Net_Resting();
 void     Net_Kick();                  // fetch now (range changed)
 uint32_t Net_Version();               // changes whenever a new list arrives
 int      Net_Snapshot(Aircraft* out); // copies the list, returns the count
 bool     Net_EverOk();
 uint32_t Net_DataAgeMs();
 bool     Net_TakeTimeSynced();        // true once after each internet time sync
+void     Net_Status(char* out, size_t cap);   // how the fetches are going, for the log
 bool     Net_LookupPostcode(const char* pc, float* lat, float* lon);
+
+// ------------------------------------------------- route and photo lookups --
+#define PHOTO_W 300
+#define PHOTO_H 200
+struct AcInfo {
+  char hex[8];
+  char callsign[10];                  // the flight the route belongs to
+  bool loading;                       // still looking things up
+  char from[5], to[5];                // airport codes; empty when the route is not known
+  char fromCity[20], toCity[20];
+  char airline[26];
+  const uint16_t* photo;              // null when there is none (yet)
+  int16_t pw, ph;                     // its size, at most PHOTO_W x PHOTO_H
+  char credit[24];                    // the photographer
+  char site[20];                      // the photo site it came from
+  char link[200];                     // the photo's own page there, shown as a QR code
+};
+void Info_Begin();
+void Info_Request(const char* hex, const char* callsign);   // looked up in the background
+void Info_Get(AcInfo* out);
+bool Info_Pending();
+void Info_Service();                  // network task only
+bool Info_SaveWaiting();              // something looked up is waiting to be written to storage
+void Info_FlushSaves();               // write it now; the screen is disturbed while it runs
+void Info_ListCard();                 // prints what is on the memory card
+void Info_WipeCard();                 // removes everything on the memory card
+void Info_EraseStore();               // factory reset: forget the stored photos and routes
 
 // -------------------------------------------------------------------- time --
 void Time_Begin();                    // time zone + read the clock chip
@@ -80,33 +116,44 @@ void Geo_DistBearing(float lat1, float lon1, float lat2, float lon2, float* km, 
 
 // ------------------------------------------------------------------- scope --
 void Scope_Begin();
+void Scope_ThemeChanged();            // rebuild the palette
 void Scope_Invalidate();              // range or position changed
 void Scope_Draw(const Aircraft* list, int n, bool wifi);
 bool Scope_HitTest(int x, int y, char* hexOut);
-void Detail_Draw(const Aircraft& a, bool lost);
+#define DETAIL_PAGES 3
+void Detail_Draw(const Aircraft& a, bool lost, int page);   // 0 = figures, 1 = photo and route, 2 = QR code to the photo's page
 
 // ------------------------------------------------------------------- clock --
 void Clock_Draw(int aircraft, bool wifi, bool dataFresh);
 
 // ---------------------------------------------------------------- settings UI
 enum SettingsAction { SA_NONE, SA_DONE, SA_WIFI, SA_OPEN_NIGHT, SA_CLOSE_NIGHT, SA_CHANGED,
-                      SA_OPEN_PLACE, SA_CLOSE_PLACE, SA_PLACE_SUBMIT };
+                      SA_OPEN_PLACE, SA_KEYS_BACK, SA_KEYS_OK,
+                      SA_WIFI_PICK, SA_WIFI_BACK, SA_WIFI_RESCAN, SA_WIFI_PHONE };
 void SettingsScreen_Draw();
 SettingsAction SettingsScreen_Tap(int x, int y);
 void NightScreen_Draw();
 SettingsAction NightScreen_Tap(int x, int y);
-// Postcode keypad: changes the place without redoing the Wi-Fi setup.
-void PlaceScreen_Open();                      // starts from the saved postcode
-void PlaceScreen_Draw();
-SettingsAction PlaceScreen_Tap(int x, int y);
-const char* PlaceScreen_Text();               // what has been typed, no spaces
-void PlaceScreen_SetStatus(const char* s, uint16_t col);
+// QWERTY keypad, shared by the postcode and the Wi-Fi password.
+void Keypad_OpenPostcode();                   // starts from the saved postcode
+void Keypad_OpenPassword(const char* ssid);   // adds capitals and symbols
+void Keypad_Draw();
+SettingsAction Keypad_Tap(int x, int y);
+const char* Keypad_Text();                    // what has been typed
+void Keypad_SetStatus(const char* s, uint16_t col);
+// List of nearby Wi-Fi networks, for setting up on the device itself.
+void WifiScreen_Scan(bool canBack);           // blocks for a few seconds
+void WifiScreen_Draw();
+SettingsAction WifiScreen_Tap(int x, int y);
+const char* WifiScreen_Ssid();                // the network tapped
+bool WifiScreen_Open();                       // true if it needs no password
 
 // ------------------------------------------------------------- phone setup --
 struct PortalResult { char ssid[33]; char pass[65]; char postcode[10]; };
 void Portal_Begin(bool canCancel);    // starts the setup network, draws the QR screen
 bool Portal_Loop(PortalResult* out);  // true once the form has been submitted
 void Portal_End();
+void Portal_Redraw();                 // draw the QR screen again
 void Setup_DrawSplash(const char* line);
 void Setup_DrawConnecting(const char* ssid, int stage, const char* postcode);
 void Setup_DrawFail(const char* title, const char* what, const char* l1, const char* l2, int secsLeft);

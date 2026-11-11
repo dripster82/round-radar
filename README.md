@@ -71,18 +71,51 @@ Screen mockups and the full flow between screens are in [mockups.html](mockups.h
 - The device stays on the screen picked. It never switches by itself, and it opens on the same
   screen after a restart.
 
+### Aircraft details
+
+- **Tap an aircraft** on the scope for its details: callsign, type in words, altitude, speed,
+  heading, climb and distance. Tap to close.
+- **Swipe sideways** on the details for a second page: a photo of that aircraft with the
+  photographer's name, where the flight is from and to, the airline, type code, registration
+  and squawk. Swipe again for a third: a QR code that opens the photo's own page on the site
+  it came from (the photo sites ask for that link). Dots at the foot show which page is open. The photo and route
+  are only fetched when this page is opened, about 50 KB each time. Every aircraft
+  looked up is kept, so opening it again uses no data, even after a restart. With a memory card
+  in the slot (FAT32) it goes there, in a `roundradar` folder: room for thousands, and saving
+  does not disturb the screen. Without a card it goes to the chip's own storage: room for about
+  100 photos, the oldest making way for new ones, and the screen goes dark for about a second
+  as the photo page closes, because writing there would otherwise show as a burst of garbage. A photo is looked
+  up afresh after a month. The route belongs to the flight, so the same aircraft on another
+  flight has its route looked up again; its photo is not downloaded again.
+- **Storing Planespotters pictures needs their permission.** Their public terms do not allow
+  it. It is switched on here (`PHOTO_STORE` in `Config.h`) with permission given to the author;
+  anyone else building this should ask them, or set it to 0.
+
 ### Both screens
 
 - **Long press** opens settings: brightness, 12 or 24 hour clock, night dimming (on or off, with
   its own From and Until hours), the buzzer ping on or off, a **Postcode** button, and a
-  **Wi-Fi setup** button to redo the Wi-Fi and postcode from a phone.
+  **Wi-Fi setup** button.
+- **Wi-Fi setup** lists the networks nearby on the device, strongest first, five to a page.
+  Tapping one opens the keypad for its password (lower case, capitals and symbols). The saved
+  network is only replaced once the new one has joined. A **QR code** button on the list leads
+  to setup from a phone instead; a hidden network needs that route.
 - **Postcode** opens a keypad of letters and digits on the device. OK looks the postcode up
   over the Wi-Fi already joined; the saved place is only replaced once the new one is found.
 - **After a power cut** it shows the last screen within 12 seconds even if the router is still
   starting, and keeps retrying Wi-Fi by itself. It only shows setup when nothing has been saved.
-- **Setup from a phone:** with no Wi-Fi saved, the device shows its own setup network and a QR
-  code. Joining it opens a short form for the Wi-Fi network, password and postcode. The postcode
-  is looked up once and stored as a position.
+- **Night hours** (the night page in settings): the screen dims to a chosen level (1% to 30%),
+  optionally turns red instead of green for those hours, and aircraft downloads rest. A touch brightens the
+  screen for 30 seconds and brings the aircraft back for five; that first touch does nothing
+  else, so it cannot open an aircraft or change the range by accident.
+- **Factory reset:** hold the BOOT button on the side for 8 seconds, from any screen. A warning
+  counts down; letting go cancels. It forgets the Wi-Fi, postcode and every setting, then
+  restarts into first setup. The RESET button beside it only restarts.
+- **First setup:** with no Wi-Fi saved, the device opens on the network list, then asks for the
+  password and the postcode on its own keypad. No phone is needed.
+- **Setup from a phone** (the QR code button): the device shows its own setup network and a QR
+  code. Joining it opens a short form for the Wi-Fi network, password and postcode. A long
+  press goes back to the list.
 
 ## What it will not do
 
@@ -90,8 +123,9 @@ Screen mockups and the full flow between screens are in [mockups.html](mockups.h
 - No receiver of its own and no GPS. The scope needs Wi-Fi; the clock does not.
 - No weather, rain radar, forecast or web settings page. These exist in the firmware we borrow
   from and are deliberately left out.
-- No full on-screen keyboard: 2.1" (about 53 mm across) is too small for one. The only typing
-  on the device is the postcode keypad (36 keys of about 5.5 mm); Wi-Fi details come from a phone.
+- No comfortable keyboard: 2.1" (about 53 mm across) only takes keys about 4.3 mm wide. That is
+  enough for a postcode and a Wi-Fi password, typed once; the phone route is there for anyone
+  who finds it fiddly.
 
 ## Limits of the screen size
 
@@ -110,6 +144,7 @@ loop, which a continuously sweeping scope cannot live with.
 | Part | Source | Work needed |
 |---|---|---|
 | Screen driver, two buffers, synced to refresh (`Display_ST7701`, `Board`, `TCA9554`) | MeteoPlaneRadar | Take as is, with a trimmed `Config.h` |
+| Reading the photo JPEGs (`stb_image.h`) | stb_image v2.30 by Sean Barrett, public domain, `github.com/nothings/stb` | Taken as is. The decoder built into the chip cannot read the progressive JPEGs the photo sites send |
 | Touch (`Touch_CST820`) | MeteoPlaneRadar | Take as is |
 | Drawing surface (`Canvas16`) | MeteoPlaneRadar | Remove its smooth-font hook |
 | Map outlines (`EuMapData.h`) and the border drawing in `EuBorder` | MeteoPlaneRadar | Take the border half; drop the city labels |
@@ -128,7 +163,7 @@ credit to chiptron.cz. The map data needs credit to Natural Earth and GeoNames.
 - **Drawing core:** a loop that draws a frame every refresh. The coastline and rings are drawn
   once into a spare buffer whenever range or position changes. Each frame blends that buffer
   with the sweep's fading brightness, then adds aircraft.
-- **Network core:** a background task fetches aircraft every 5 seconds (less often at long
+- **Network core:** a background task fetches aircraft every 15 seconds (less often at long
   range, backing off on errors) and hands a finished list to the drawing core. The sweep never
   waits on a download.
 - **Settings** (Wi-Fi, position, screen picked, range, brightness, clock format, night dimming,
@@ -145,12 +180,29 @@ Arduino 1.6.9, ArduinoJson 7.4.3. `firmware/flash.sh` builds, flashes over USB a
 |---|---|---|
 | Aircraft near a position | adsb.fi open data: `opendata.adsb.fi/api/v3/lat/<lat>/lon/<lon>/dist/<nautical miles>`, no account | Tested 10 Nov 2026, returns live aircraft. Free for personal, non-commercial use |
 | Postcode to position | `api.postcodes.io/postcodes/<postcode>` (free, UK only) | Tested 10 Nov 2026, returns latitude and longitude |
+| Route of a flight | `api.adsbdb.com/v0/callsign/<callsign>`, no account | Tested 11 Nov 2026. From a database of callsigns, so it can be missing or out of date |
+| Photo of an aircraft | `api.planespotters.net/pub/photos/hex/<ICAO address>`, no account, but the request must name a contact (the repository URL is sent) | Tested 11 Nov 2026: 19 of 24 aircraft near Bradford, every airliner. Pictures 420 x 280, progressive JPEG; the photographer is credited on screen |
+| Photo, second choice | `airport-data.com/api/ac_thumb.json?m=<ICAO address>&n=1`, no account | Tested 11 Nov 2026. Had the five light aircraft and helicopters Planespotters lacked. Small pictures (150 x 100) |
 | Coastline | Natural Earth outlines from MeteoPlaneRadar's `EuMapData.h` (covers Britain and Ireland) | In hand. Islands under 15 km across are missing |
 | Time | Internet time servers, kept by the clock chip | Standard in the ESP32 core |
 
 The device depends on the aircraft feed staying available and free. The feed address will be a
 setting, so it can be pointed elsewhere without rewriting the firmware. Requests carry our own
 identifying User-Agent, not MeteoPlaneRadar's.
+
+### Mobile data
+
+The recipient's only internet is a phone hotspot, so downloads are kept few and small:
+
+- One secure connection to the feed is kept open and reused; opening one costs about 6 KB.
+- The scope fetches every 15, 20 or 30 seconds (25, 50, 100 km) and moves each aircraft along
+  its track in between. The clock fetches every 5 minutes, for its count.
+- During the night hours fetching rests five minutes after the last touch, until touched.
+
+Left on the scope all day this is roughly 0.4 GB a month at 25 km, and 0.6 to 2.3 GB at 100 km
+depending on traffic (estimates from measured download sizes). Compressed downloads would
+cut the long-range figure further and are not done yet. The hotspot must be on 2.4GHz
+("Maximise Compatibility" on an iPhone).
 
 ## Build order
 

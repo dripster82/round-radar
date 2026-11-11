@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Round Radar detail pages</title>
+<style>
+  :root { --bg:#f4f5f3; --ink:#1b1f1c; --muted:#5d665f; --line:#d5d9d4; --bezel:#2a2d2b; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#111412; --ink:#e8ece8; --muted:#9aa49c; --line:#2f3531; --bezel:#3a3f3b; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+  main { max-width:1100px; margin:0 auto; padding:24px 16px 64px; }
+  h1 { font-size:26px; margin:0 0 4px; }
+  p { margin:6px 0 12px; max-width:70ch; }
+  .muted { color:var(--muted); }
+  .bar { display:flex; flex-wrap:wrap; gap:8px; margin:14px 0 6px; }
+  button { font:inherit; padding:6px 14px; border-radius:8px; border:1px solid var(--line); background:transparent; color:var(--ink); cursor:pointer; }
+  button[aria-pressed=true] { background:var(--ink); color:var(--bg); }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:28px 20px; margin-top:18px; }
+  figure { margin:0; text-align:center; }
+  canvas { width:100%; max-width:480px; height:auto; border-radius:50%; border:8px solid var(--bezel); background:#000; }
+  body.actual canvas { max-width:216px; }
+  figcaption { margin-top:8px; font-size:14px; }
+  figcaption b { display:block; font-size:15px; }
+  figcaption span { color:var(--muted); }
+</style>
+</head>
+<body>
+<main>
+<h1>Aircraft detail pages</h1>
+<p class="muted">Drawn with the device's own font and the same coordinates as the firmware, pixel for pixel, on a 480 x 480 round screen. The photo is a drawn stand-in; real ones now arrive at 420 x 280 and are reduced to fit, so they are sharper than this.</p>
+<div class="bar">
+  <button id="bSize" aria-pressed="false">Actual size (about 53 mm)</button>
+  <button id="bRed" aria-pressed="false">Night red</button>
+</div>
+<div class="grid" id="grid"></div>
+</main>
+<script>
+const FONT = "000000000000005f00000007000700147f147f14242a7f2a12231308646236495620500008070300001c2241000041221c002a1c7f1c2a08083e080800807030000808080808000060600020100804023e5149453e00427f400072494949462141494d331814127f1027454545393c4a49493141211109073649494936464949291e0000140000004034000000081422411414141414004122140802015909063e415d594e7c1211127c7f494949363e414141227f4141413e7f494949417f090909013e414151737f0808087f00417f41002040413f017f081422417f404040407f021c027f7f0408107f3e4141413e7f090909063e4151215e7f09192946264949493203017f01033f4040403f1f2040201f3f4038403f631408146303047804036159494d43007f4141410204081020004141417f04020102044040404040000307080020545478407f284444383844444428384444287f385454541800087e090218a4a49c787f0804047800447d40002040403d007f1028440000417f40007c047804787c080404783844444438fc1824241818242418fc7c08040408485454542404043f44243c4040207c1c2040201c3c4030403c44281028444c9090907c4464544c440008364100000077000000413608000201020402";
+const GREEN_T = { GREEN:'#39ff7a', MID:'#22a455', DIM:'#11612b', AMBER:'#ffc94d', GREY:'#6b7169' };
+const RED_T   = { GREEN:'#ff2a1a', MID:'#a01a10', DIM:'#600c08', AMBER:'#ff6c2a', GREY:'#693030' };
+let C = GREEN_T, red = false;
+const CX = 240, PHOTO_W = 300, PHOTO_H = 200;
+
+// ---- the firmware's drawing calls ------------------------------------------
+function textL(g, x, y, s, size, col) {
+  g.fillStyle = col;
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    if (c < 32 || c > 126) continue;
+    for (let cx = 0; cx < 5; cx++) {
+      const bits = parseInt(FONT.substr(((c - 32) * 5 + cx) * 2, 2), 16);
+      for (let cy = 0; cy < 8; cy++) if (bits & (1 << cy)) g.fillRect(x + (i * 6 + cx) * size, y + cy * size, size, size);
+    }
+  }
+}
+const text  = (g, cx, y, s, size, col) => textL(g, cx - s.length * 3 * size, y, s, size, col);
+const textR = (g, xr, y, s, size, col) => textL(g, xr - s.length * 6 * size, y, s, size, col);
+const hline = (g, x, y, w, col) => { g.fillStyle = col; g.fillRect(x, y, w, 1); };
+function rect(g, x, y, w, h, col) { g.fillStyle = col; g.fillRect(x, y, w, 1); g.fillRect(x, y + h - 1, w, 1); g.fillRect(x, y, 1, h); g.fillRect(x + w - 1, y, 1, h); }
+
+// ---- a stand-in photo, 150 x 100, enlarged smoothly ------------------------
+function photo(g, top, w, h) {
+  const s = document.createElement('canvas'); s.width = 150; s.height = 100;
+  const p = s.getContext('2d');
+  const sky = p.createLinearGradient(0, 0, 0, 100); sky.addColorStop(0, '#5d8fc4'); sky.addColorStop(0.7, '#bcd3e6'); sky.addColorStop(0.71, '#7d8a78'); sky.addColorStop(1, '#5c6658');
+  p.fillStyle = sky; p.fillRect(0, 0, 150, 100);
+  p.fillStyle = '#f4f4f1'; p.beginPath(); p.moveTo(18, 52); p.quadraticCurveTo(22, 44, 40, 44); p.lineTo(118, 44); p.quadraticCurveTo(136, 46, 138, 52); p.quadraticCurveTo(134, 57, 116, 57); p.lineTo(34, 57); p.closePath(); p.fill();
+  p.fillStyle = '#1d3f8f'; p.beginPath(); p.moveTo(20, 50); p.lineTo(10, 24); p.lineTo(22, 24); p.lineTo(42, 46); p.closePath(); p.fill();
+  p.fillStyle = '#c9cdc9'; p.beginPath(); p.moveTo(62, 55); p.lineTo(40, 70); p.lineTo(52, 70); p.lineTo(92, 56); p.closePath(); p.fill();
+  p.fillStyle = '#8b908b'; p.fillRect(66, 60, 16, 7);
+  p.fillStyle = '#26303c'; for (let x = 44; x < 118; x += 5) p.fillRect(x, 48, 2, 2);
+  p.fillStyle = '#222'; p.fillRect(56, 66, 3, 6); p.fillRect(108, 57, 2, 8);
+  const d = document.createElement('canvas'); d.width = w; d.height = h;
+  const q = d.getContext('2d'); q.imageSmoothingEnabled = true; q.imageSmoothingQuality = 'low';
+  q.drawImage(s, 0, 0, w, h);
+  g.globalAlpha = red ? 0.7 : 1;       // night red: full colour, 30% transparent over black
+  g.drawImage(d, CX - w / 2, top + (PHOTO_H - h) / 2);
+  g.globalAlpha = 1;
+}
+
+// ---- the three pages, mirroring Detail_Draw, detailMore and detailLink in Scope.cpp
+function circle(g, x, y, r, col, fill) { g.beginPath(); g.arc(x + 0.5, y + 0.5, r, 0, 7); if (fill) { g.fillStyle = col; g.fill(); } else { g.strokeStyle = col; g.lineWidth = 1; g.stroke(); } }
+function dots(g, page) { for (let i = 0; i < 3; i++) circle(g, CX + (i * 2 - 2) * 10, 436, 4, i === page ? C.AMBER : C.GREY, i === page); }
+
+// A stand-in QR code the size of the real one for a Planespotters link (version 6,
+// 41 squares): the right look and proportions, but it will not scan.
+function page3(g, a, st) {
+  dots(g, 2);
+  if (st !== 'full' || !a.photo) {
+    text(g, CX, 38, a.callsign, 3, C.AMBER);
+    text(g, CX, 212, st === 'loading' ? 'Getting photo' : 'No photo page', 2, C.MID);
+    if (st !== 'loading') text(g, CX, 236, 'for this aircraft', 2, C.MID);
+    return;
+  }
+  const n = 41, m = Math.floor(256 / (n + 2)), box = (n + 2) * m, x0 = CX - box / 2, y0 = 202 - box / 2;
+  text(g, CX, 44, 'Scan for the photo', 2, C.MID);
+  g.fillStyle = red ? C.GREEN : '#fff'; g.fillRect(x0, y0, box, box);
+  g.fillStyle = '#000';
+  let seed = 7; const rnd = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+  const finder = (fx, fy, x, y) => { const dx = x - fx, dy = y - fy; if (dx < -1 || dy < -1 || dx > 7 || dy > 7) return null; if (dx < 0 || dy < 0 || dx > 6 || dy > 6) return false; return dx === 0 || dy === 0 || dx === 6 || dy === 6 || (dx > 1 && dx < 5 && dy > 1 && dy < 5); };
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+    let on = finder(0, 0, x, y); if (on === null) on = finder(n - 7, 0, x, y); if (on === null) on = finder(0, n - 7, x, y);
+    if (on === null) on = rnd() < 0.5;
+    if (on) g.fillRect(x0 + (x + 1) * m, y0 + (y + 1) * m, m, m);
+  }
+  text(g, CX, 352, 'Photo: ' + a.credit, 2, C.GREEN);
+  text(g, CX, 378, 'planespotters.net', 2, C.MID);
+}
+
+function page1(g, a, lost) {
+  dots(g, 0);
+  text(g, CX, 62, a.callsign, 5, C.AMBER);
+  text(g, CX, 116, a.desc || (a.type + '  ' + a.reg), 2, C.GREEN);
+  hline(g, 90, 146, 300, C.DIM);
+  let y = 166;
+  const row = (l, v) => { textL(g, 86, y + 4, l, 2, C.MID); textR(g, 394, y, v, 3, C.GREEN); y += 40; };
+  row('Altitude', a.alt); row('Speed', a.speed); row('Heading', a.heading); row('Climb', a.climb); row('Distance', a.dist);
+  if (lost) { text(g, CX, 380, 'Signal lost', 2, C.AMBER); text(g, CX, 404, 'last known values', 2, C.AMBER); }
+  else { text(g, CX, 380, 'Tap to close', 2, C.MID); text(g, CX, 402, 'Swipe for photo', 2, C.MID); }
+}
+
+function page2(g, a, st) {       // st: 'loading' | 'full' | 'none'
+  dots(g, 1);
+  text(g, CX, 38, a.callsign, 3, C.AMBER);
+  const top = 72;
+  if (st === 'full' && a.photo) {
+    photo(g, top, a.photo[0], a.photo[1]);
+    text(g, CX, 278, 'Photo: ' + a.credit, 2, C.MID);
+  } else {
+    rect(g, CX - PHOTO_W / 2, top, PHOTO_W, PHOTO_H, C.DIM);
+    text(g, CX, top + PHOTO_H / 2 - 8, st === 'loading' ? 'Getting photo' : 'No photo found', 2, C.MID);
+  }
+  if (st !== 'loading' && a.from) {
+    text(g, CX, 304, a.from + ' > ' + a.to, 3, C.AMBER);
+    text(g, CX, 336, a.fromCity.slice(0, 13) + ' to ' + a.toCity.slice(0, 13), 2, C.GREEN);
+  } else {
+    text(g, CX, 320, st === 'loading' ? 'Looking up route' : 'Route not known', 2, C.MID);
+  }
+  const who = (st !== 'loading' && a.airline) || a.op || '';
+  if (who) text(g, CX, 360, who, 2, C.GREEN);
+  text(g, CX, 384, [a.type, a.reg, a.squawk && 'sq ' + a.squawk].filter(Boolean).join('  '), 2, C.MID);
+}
+
+// ---- sample aircraft --------------------------------------------------------
+const JET = { callsign:'RYR23JQ', desc:'BOEING 737 MAX 8', type:'B38M', reg:'EI-IJO', squawk:'5264',
+  alt:'34,000 ft', speed:'447 kt', heading:'152 SE', climb:'level', dist:'18 km NE',
+  from:'EDI', to:'MLA', fromCity:'Edinburgh', toCity:'Valletta', airline:'Ryanair', credit:'A. Sample', photo:[300, 200] };
+const LONG = { callsign:'DAL49', desc:'AIRBUS A-330-900', type:'A339', reg:'N424DX', squawk:'2120', op:'DELTA AIR LINES INC',
+  alt:'38,000 ft', speed:'512 kt', heading:'291 WNW', climb:'+1,200 fpm', dist:'64 km SW',
+  from:'AMS', to:'ATL', fromCity:'Amsterdam', toCity:'Atlanta', airline:'Delta Air Lines', credit:'Jane Photographer', photo:[300, 200] };
+const LIGHT = { callsign:'GEGTB', desc:'PIPER PA-28-140/150/160/180', type:'P28A', reg:'G-EGTB', squawk:'7365',
+  alt:'2,150 ft', speed:'96 kt', heading:'044 NE', climb:'-350 fpm', dist:'7.4 km W' };
+
+const SCREENS = [
+  ['Page 1: airliner', 'Tap an aircraft on the scope', g => page1(g, JET, false)],
+  ['Page 2: photo and route', 'Swipe sideways from page 1', g => page2(g, JET, 'full')],
+  ['Page 3: link to the photo', 'Swipe again; a stand-in code that will not scan', g => page3(g, JET, 'full')],
+  ['Page 2: still loading', 'For the first few seconds', g => page2(g, JET, 'loading')],
+  ['Page 1: long-haul', 'Longest values in each row', g => page1(g, LONG, false)],
+  ['Page 2: long names', 'Operator and credit at full length', g => page2(g, LONG, 'full')],
+  ['Page 1: light aircraft', 'Longest type description', g => page1(g, LIGHT, false)],
+  ['Page 2: nothing found', 'Common for light aircraft', g => page2(g, LIGHT, 'none')],
+  ['Page 3: nothing found', 'No photo, so no page to link to', g => page3(g, LIGHT, 'none')],
+  ['Page 1: signal lost', 'Aircraft missing from the feed', g => page1(g, JET, true)],
+];
+
+function draw() {
+  C = red ? RED_T : GREEN_T;
+  const grid = document.getElementById('grid'); grid.innerHTML = '';
+  for (const [b, s, fn] of SCREENS) {
+    const f = document.createElement('figure');
+    const c = document.createElement('canvas'); c.width = c.height = 480;
+    const g = c.getContext('2d'); g.fillStyle = '#000'; g.fillRect(0, 0, 480, 480);
+    fn(g);
+    const cap = document.createElement('figcaption'); cap.innerHTML = '<b>' + b + '</b><span>' + s + '</span>';
+    f.append(c, cap); grid.append(f);
+  }
+}
+document.getElementById('bSize').onclick = e => { const on = document.body.classList.toggle('actual'); e.target.setAttribute('aria-pressed', on); };
+document.getElementById('bRed').onclick = e => { red = !red; e.target.setAttribute('aria-pressed', red); draw(); };
+draw();
+</script>
+</body>
+</html>

@@ -384,6 +384,13 @@ void LCD_Flush(const uint16_t* fb) {
 }
 
 // --- Backlight ---
+void LCD_ReleaseSetupBus() {
+  if (!s_spi) return;
+  spi_bus_remove_device(s_spi);
+  spi_bus_free(SPI2_HOST);
+  s_spi = NULL;
+}
+
 void Backlight_Init() {
   ledcAttach(LCD_BL_PIN, BL_PWM_FREQ, BL_PWM_RES);
   Set_Backlight(80);

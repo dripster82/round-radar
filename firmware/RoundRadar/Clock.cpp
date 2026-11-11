@@ -20,6 +20,18 @@ void UI_Text(int cx, int y, const char* s, int size, uint16_t col) {
 void UI_TextR(int xRight, int y, const char* s, int size, uint16_t col) {
   UI_TextL(xRight - (int)strlen(s) * 6 * size, y, s, size, col);
 }
+// ------------------------------------------------------------------- theme --
+uint16_t C_GREEN = 0x3FEF, C_MID = 0x252A, C_DIM = 0x1305, C_AMBER = 0xFE49, C_GREY = 0x6B8D;
+static bool s_red = false;
+bool Theme_Red() { return s_red; }
+void Theme_Set(bool red) {
+  if (red == s_red) return;
+  s_red = red;
+  if (red) { C_GREEN = 0xF943; C_MID = 0xA0C2; C_DIM = 0x6061; C_AMBER = 0xFB65; C_GREY = 0x6986; }
+  else     { C_GREEN = 0x3FEF; C_MID = 0x252A; C_DIM = 0x1305; C_AMBER = 0xFE49; C_GREY = 0x6B8D; }
+  Scope_ThemeChanged();
+}
+
 void UI_Pill(int x, int y, int w, int h, const char* s, bool on) {
   if (on) gfx->fillRoundRect(x, y, w, h, 9, C_GREEN);
   else    gfx->drawRoundRect(x, y, w, h, 9, C_MID);
@@ -102,7 +114,7 @@ void Time_SaveToChip() {
 // ------------------------------------------------------------- clock screen --
 // Seven-segment digit: which of segments a..g are lit for 0..9.
 static const uint8_t SEG[10] = { 0x3F, 0x06, 0x5B, 0x4F, 0x66, 0x6D, 0x7D, 0x07, 0x7F, 0x6F };
-#define C_GHOST 0x00E1   // unlit segment, barely visible
+#define C_GHOST (Theme_Red() ? 0x1800 : 0x00E1)   // unlit segment, barely visible
 
 static void drawDigit(int x, int y, int w, int h, int d) {
   const int t = 15, v = h / 2 - (3 * t) / 2;
@@ -132,7 +144,7 @@ void Clock_Draw(int aircraft, bool wifi, bool dataFresh) {
   for (int i = 0; i < 60; i++) {
     const float a = i * 6 * 0.0174532925f, s = sinf(a), c = cosf(a);
     const int r0 = (i % 5) ? 222 : 214, r1 = 232;
-    const uint16_t col = (valid && i <= lt.tm_sec) ? C_GREEN : C_GHOST + 0x0100;
+    const uint16_t col = (valid && i <= lt.tm_sec) ? C_GREEN : (Theme_Red() ? 0x2000 : 0x01E1);
     const int x0 = 240 + (int)(r0 * s), y0 = 240 - (int)(r0 * c);
     const int x1 = 240 + (int)(r1 * s), y1 = 240 - (int)(r1 * c);
     gfx->drawLine(x0, y0, x1, y1, col);

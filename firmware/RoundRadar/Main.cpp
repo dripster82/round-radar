@@ -14,7 +14,7 @@
 
 Canvas16* gfx = nullptr;
 
-enum Screen { SC_BOOT, SC_SCOPE, SC_DETAIL, SC_CLOCK, SC_SETTINGS, SC_NIGHT, SC_PLACE, SC_PORTAL };
+enum Screen { SC_BOOT, SC_SCOPE, SC_DETAIL, SC_CLOCK, SC_SETTINGS, SC_NIGHT, SC_PLACE, SC_WIFI, SC_PASS, SC_PORTAL };
 static Screen s_scr = SC_BOOT;
 static Screen s_settingsReturn = SC_SCOPE;
 static unsigned long s_bootStart = 0;
@@ -28,10 +28,18 @@ static uint32_t s_snapVer = 0;
 static char     s_selHex[8] = "";
 static Aircraft s_selCache;
 static int      s_selMiss = 0;
+static int      s_detailPage = 0;      // 0 = figures, 1 = photo and route, 2 = link to the photo's page
 
 static unsigned long s_buzzOffAt = 0;
 static char s_pinged[16][8];
 static int  s_pingedNext = 0;
+
+// Sound the buzzer; the loop switches it off again.
+static void buzz(unsigned long ms) {
+  TCA9554_SetPin(EXIO_BUZZER, true);
+  s_buzzOffAt = millis() + ms;
+  if (s_buzzOffAt == 0) s_buzzOffAt = 1;
+}
 
 // ----------------------------------------------------------------- gestures --
 enum Gesture { G_NONE, G_TAP, G_LEFT, G_RIGHT, G_UP, G_DOWN, G_LONG };
@@ -76,16 +84,48 @@ static bool nightNow() {
                                      : (h >= cfg.nightFrom || h < cfg.nightTo);
 }
 
+static unsigned long s_lastTouch = 0;
+
+// True while the screen is dimmed for the night. Settings stay at the chosen brightness
+// so they can be read and changed at night, and a touch brightens the screen for 30 seconds.
+static bool dimmedNow() {
+  return nightNow() && s_scr < SC_SETTINGS && millis() - s_lastTouch > NIGHT_BRIGHT_MS && cfg.bright > cfg.nightLevel;
+}
+
+static int  s_blLast = -1;
+static bool s_blDark = false;           // held dark while storage is written
+
 static void applyBacklight() {
-  static int last = -1;
   int b = cfg.bright;
-  // Settings stay at the chosen brightness so they can be read and changed at night.
-  if (nightNow() && s_scr != SC_SETTINGS && s_scr != SC_NIGHT && s_scr != SC_PLACE && b > NIGHT_BRIGHTNESS) b = NIGHT_BRIGHTNESS;
-  if (b != last) { Set_Backlight((uint8_t)b); last = b; }
+  const bool dim = dimmedNow();
+  if (dim) b = cfg.nightLevel;
+  if (!s_blDark && b != s_blLast) { Set_Backlight((uint8_t)b); s_blLast = b; }
+  // Red, if chosen, for the whole of the night hours, brightened by a touch or not.
+  // The night page always shows the choice, so it can be seen when picking it by day.
+  Theme_Set(cfg.nightRed && (nightNow() || s_scr == SC_NIGHT));
+}
+
+// Writing to the storage starves the screen of its picture for a moment, which shows
+// as a burst of garbage. So what the photo page looked up is written as that page
+// closes, with the light off; it comes back with the next picture drawn.
+static void saveLookups() {
+  if (!Info_SaveWaiting()) return;
+  s_blDark = true;
+  Set_Backlight(0);
+  const unsigned long t0 = millis();
+  Info_FlushSaves();
+  Serial.printf("STORE: written in %lu ms\n", millis() - t0);
+}
+static void frameShown() {
+  if (!s_blDark) return;
+  s_blDark = false;
+  s_blLast = -1;
+  applyBacklight();
 }
 
 // -------------------------------------------------------------------- setup --
 static void goScreen(Screen s) {
+  if (s_scr == SC_DETAIL && s != SC_DETAIL) saveLookups();
   s_scr = s;
   Net_SetScopeActive(s == SC_SCOPE || s == SC_DETAIL);
 }
@@ -93,11 +133,75 @@ static void goScreen(Screen s) {
 static void showSaved() { goScreen(cfg.screen == 1 ? SC_CLOCK : SC_SCOPE); }
 
 static void enterPortal() {
-  Net_SetPaused(true);
   s_scr = SC_PORTAL;
   Watchdog_Feed();
-  Portal_Begin(cfg.ssid[0] != '\0');
+  Portal_Begin(true);
   Watchdog_Feed();
+}
+
+static void startWifi() {
+  WiFi.mode(WIFI_STA);
+  WiFi.setAutoReconnect(true);
+  WiFi.begin(cfg.ssid, cfg.pass);
+}
+
+// A new network could not be joined: return to the saved one at once.
+static void rejoinSaved() {
+  WiFi.disconnect();
+  if (cfg.ssid[0]) { delay(100); startWifi(); }
+}
+
+// Wi-Fi setup on the device itself: list the networks nearby. Looking is free: the
+// network already joined stays joined and aircraft keep arriving. Only Join (or the
+// phone form's Save) leaves it, and a failed attempt goes straight back to it.
+static void enterWifi() {
+  Setup_DrawSplash("Looking for Wi-Fi");
+  Watchdog_Feed();
+  WiFi.mode(WIFI_STA);
+  if (WiFi.status() != WL_CONNECTED) { WiFi.disconnect(); delay(100); }   // a join in progress blocks the search
+  WifiScreen_Scan(cfg.ssid[0] != '\0' && cfg.hasPos);
+  Watchdog_Feed();
+  s_scr = SC_WIFI;
+}
+
+// Leave Wi-Fi setup without changing anything: back to the saved network.
+static void leaveWifi() {
+  if (WiFi.status() != WL_CONNECTED) startWifi();
+  Net_SetPaused(false);
+  goScreen(SC_SETTINGS);
+}
+
+// Join the network picked on the device. The saved network is only replaced once
+// the new one has connected.
+static bool tryJoin(const char* ssid, const char* pass) {
+  WiFi.disconnect();
+  delay(100);
+  WiFi.begin(ssid, pass);
+  const unsigned long t0 = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - t0 < WIFI_JOIN_TIMEOUT_MS) {
+    Setup_DrawConnecting(ssid, 0, "");
+    Watchdog_Feed();
+    delay(150);
+  }
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("WIFI: could not join");
+    rejoinSaved();
+    return false;
+  }
+  snprintf(cfg.ssid, sizeof(cfg.ssid), "%s", ssid);
+  snprintf(cfg.pass, sizeof(cfg.pass), "%s", pass);
+  Settings_Save();
+  WiFi.setAutoReconnect(true);
+  Serial.println("WIFI: joined and saved");
+  return true;
+}
+
+// After joining on the device: a new device still needs its postcode.
+static void afterJoin() {
+  if (!cfg.hasPos) { Keypad_OpenPostcode(); s_scr = SC_PLACE; return; }
+  Net_SetPaused(false);
+  Net_Kick();
+  goScreen(SC_SETTINGS);
 }
 
 static void failScreen(const char* title, const char* what, const char* l1, const char* l2) {
@@ -112,6 +216,8 @@ static void failScreen(const char* title, const char* what, const char* l1, cons
 // the new Wi-Fi has connected and the postcode has been found.
 static bool tryNewDetails(const PortalResult& r) {
   Portal_End();
+  WiFi.disconnect();                   // leave the saved network, or it would count as joined
+  delay(100);
   WiFi.begin(r.ssid, r.pass);
   const unsigned long t0 = millis();
   while (WiFi.status() != WL_CONNECTED && millis() - t0 < WIFI_JOIN_TIMEOUT_MS) {
@@ -121,7 +227,7 @@ static bool tryNewDetails(const PortalResult& r) {
   }
   if (WiFi.status() != WL_CONNECTED) {
     Serial.println("SETUP: could not join");
-    WiFi.disconnect(true);
+    rejoinSaved();
     failScreen("COULDN'T JOIN", r.ssid, "Check the password", "and try again");
     return false;
   }
@@ -133,7 +239,7 @@ static bool tryNewDetails(const PortalResult& r) {
   if (!found) { delay(1500); found = Net_LookupPostcode(r.postcode, &lat, &lon); Watchdog_Feed(); }   // one retry
   if (!found) {
     Serial.println("SETUP: postcode not found");
-    WiFi.disconnect(true);
+    rejoinSaved();
     failScreen("PLACE NOT FOUND", r.postcode, "Check the postcode", "and try again");
     return false;
   }
@@ -150,21 +256,22 @@ static bool tryNewDetails(const PortalResult& r) {
 // The postcode keypad's OK: look the postcode up over the Wi-Fi already joined.
 // The saved place is only replaced once the new one has been found.
 static void tryNewPostcode() {
-  if (WiFi.status() != WL_CONNECTED) { PlaceScreen_SetStatus("No Wi-Fi", C_RED); return; }
-  PlaceScreen_SetStatus("Looking up", C_AMBER);
-  PlaceScreen_Draw(); gfx->flush();
+  if (WiFi.status() != WL_CONNECTED) { Keypad_SetStatus("No Wi-Fi", C_RED); return; }
+  const bool firstTime = !cfg.hasPos;
+  Keypad_SetStatus("Looking up", C_AMBER);
+  Keypad_Draw(); gfx->flush();
   Watchdog_Feed();
   float lat = 0, lon = 0;
-  bool found = Net_LookupPostcode(PlaceScreen_Text(), &lat, &lon);
+  bool found = Net_LookupPostcode(Keypad_Text(), &lat, &lon);
   Watchdog_Feed();
-  if (!found) { delay(1500); found = Net_LookupPostcode(PlaceScreen_Text(), &lat, &lon); Watchdog_Feed(); }   // one retry
+  if (!found) { delay(1500); found = Net_LookupPostcode(Keypad_Text(), &lat, &lon); Watchdog_Feed(); }   // one retry
   if (!found) {
     Serial.println("PLACE: postcode not found");
-    PlaceScreen_SetStatus("Not found", C_RED);
+    Keypad_SetStatus("Not found", C_RED);
     return;
   }
   // Stored the usual way, with a space before the last three characters.
-  const char* t = PlaceScreen_Text();
+  const char* t = Keypad_Text();
   const int n = (int)strlen(t);
   snprintf(cfg.postcode, sizeof(cfg.postcode), "%.*s %s", n - 3, t, t + n - 3);
   cfg.lat = lat; cfg.lon = lon; cfg.hasPos = true;
@@ -172,13 +279,8 @@ static void tryNewPostcode() {
   Serial.printf("PLACE: saved %s, position %.4f, %.4f\n", cfg.postcode, lat, lon);
   Scope_Invalidate();
   Net_Kick();
-  goScreen(SC_SETTINGS);
-}
-
-static void startWifi() {
-  WiFi.mode(WIFI_STA);
-  WiFi.setAutoReconnect(true);
-  WiFi.begin(cfg.ssid, cfg.pass);
+  if (firstTime) { Net_SetPaused(false); showSaved(); }   // setup finished: start showing aircraft
+  else goScreen(SC_SETTINGS);
 }
 
 void App_Setup() {
@@ -216,14 +318,19 @@ void App_Setup() {
   gfx->fillScreen(C_BLACK); gfx->flush();     // both buffers start black
   applyBacklight();
 
+  pinMode(PIN_BOOT, INPUT_PULLUP);
   if (!Touch_Init()) Serial.println("WARNING: touch did not start");
   Time_Begin();
   Scope_Begin();
   Net_Begin();
   Watchdog_Begin();
 
-  if (cfg.ssid[0] == '\0' || !cfg.hasPos) {
-    enterPortal();
+  if (cfg.ssid[0] == '\0') {
+    enterWifi();
+  } else if (!cfg.hasPos) {                    // Wi-Fi saved, setup stopped before the postcode
+    startWifi();
+    Keypad_OpenPostcode();
+    s_scr = SC_PLACE;
   } else {
     startWifi();
     Net_SetPaused(false);
@@ -241,6 +348,7 @@ static void handleGesture(Gesture g, int x, int y) {
         if (Scope_HitTest(x, y, s_selHex)) {
           s_selMiss = 0;
           for (int i = 0; i < s_snapN; i++) if (!strcmp(s_snap[i].hex, s_selHex)) s_selCache = s_snap[i];
+          s_detailPage = 0;
           goScreen(SC_DETAIL);
         }
       } else if (g == G_LEFT || g == G_RIGHT) {
@@ -261,6 +369,11 @@ static void handleGesture(Gesture g, int x, int y) {
       break;
     case SC_DETAIL:
       if (g == G_TAP) { s_selHex[0] = '\0'; goScreen(SC_SCOPE); }
+      else if (g == G_LEFT || g == G_RIGHT) {
+        // Left for the next page, right for the one before; round and round.
+        s_detailPage = (s_detailPage + (g == G_LEFT ? 1 : DETAIL_PAGES - 1)) % DETAIL_PAGES;
+        if (s_detailPage != 0) Info_Request(s_selCache.hex, s_selCache.callsign);   // fetched only when looked at
+      }
       break;
     case SC_CLOCK:
       if (g == G_UP || g == G_DOWN) { cfg.screen = 0; Settings_Save(); goScreen(SC_SCOPE); }
@@ -269,29 +382,54 @@ static void handleGesture(Gesture g, int x, int y) {
     case SC_SETTINGS:
     case SC_NIGHT:
       if (g == G_TAP) {
+        const bool pingWas = cfg.ping;
         const SettingsAction a = s_scr == SC_SETTINGS ? SettingsScreen_Tap(x, y) : NightScreen_Tap(x, y);
-        if (a == SA_CHANGED) { Settings_Save(); applyBacklight(); }
+        if (a == SA_CHANGED) {
+          Settings_Save(); applyBacklight();
+          if (cfg.ping && !pingWas) { Serial.println("PING: test beep"); buzz(PING_MS); }   // lets the sound be heard when choosing it
+        }
         else if (a == SA_DONE) goScreen(s_settingsReturn);
         else if (a == SA_OPEN_NIGHT) goScreen(SC_NIGHT);
         else if (a == SA_CLOSE_NIGHT) goScreen(SC_SETTINGS);
-        else if (a == SA_OPEN_PLACE) { PlaceScreen_Open(); goScreen(SC_PLACE); }
-        else if (a == SA_WIFI) enterPortal();
+        else if (a == SA_OPEN_PLACE) { Keypad_OpenPostcode(); goScreen(SC_PLACE); }
+        else if (a == SA_WIFI) enterWifi();
       }
       break;
     case SC_PLACE:
       if (g == G_TAP) {
-        const SettingsAction a = PlaceScreen_Tap(x, y);
-        if (a == SA_CLOSE_PLACE) goScreen(SC_SETTINGS);
-        else if (a == SA_PLACE_SUBMIT) tryNewPostcode();
+        const SettingsAction a = Keypad_Tap(x, y);
+        if (a == SA_KEYS_BACK) { if (cfg.hasPos) goScreen(SC_SETTINGS); else enterWifi(); }
+        else if (a == SA_KEYS_OK) tryNewPostcode();
+      }
+      break;
+    case SC_WIFI:
+      if (g == G_TAP) {
+        const SettingsAction a = WifiScreen_Tap(x, y);
+        if (a == SA_WIFI_BACK) leaveWifi();
+        else if (a == SA_WIFI_RESCAN) enterWifi();
+        else if (a == SA_WIFI_PHONE) enterPortal();
+        else if (a == SA_WIFI_PICK) {
+          if (!WifiScreen_Open()) { Keypad_OpenPassword(WifiScreen_Ssid()); s_scr = SC_PASS; }
+          else if (tryJoin(WifiScreen_Ssid(), "")) afterJoin();
+          else failScreen("COULDN'T JOIN", WifiScreen_Ssid(), "Try again, or pick", "another network");
+        }
+      }
+      break;
+    case SC_PASS:
+      if (g == G_TAP) {
+        const SettingsAction a = Keypad_Tap(x, y);
+        if (a == SA_KEYS_BACK) s_scr = SC_WIFI;
+        else if (a == SA_KEYS_OK) {
+          if (tryJoin(WifiScreen_Ssid(), Keypad_Text())) afterJoin();
+          else Keypad_SetStatus("Couldn't join", C_RED);   // password kept, to correct it
+        }
       }
       break;
     case SC_PORTAL:
-      // Entered from settings by mistake: a long press goes back to the saved network.
-      if (g == G_LONG && cfg.ssid[0] && cfg.hasPos) {
+      // A long press goes back to setting up on the device.
+      if (g == G_LONG) {
         Portal_End();
-        startWifi();
-        Net_SetPaused(false);
-        showSaved();
+        enterWifi();
       }
       break;
     default: break;
@@ -320,16 +458,70 @@ static void onNewData() {
       if (seen) continue;
       strcpy(s_pinged[s_pingedNext], s_snap[i].hex);
       s_pingedNext = (s_pingedNext + 1) % 16;
-      TCA9554_SetPin(EXIO_BUZZER, true);
-      s_buzzOffAt = millis() + PING_MS;
-      if (s_buzzOffAt == 0) s_buzzOffAt = 1;
+      Serial.printf("PING: %s at %.1f km\n", s_snap[i].hex, km);
+      buzz(PING_MS);
     }
   }
+}
+
+// ------------------------------------------------------------ factory reset --
+// Holding the BOOT button on the side for 8 seconds forgets the Wi-Fi, postcode and
+// every setting, then restarts into first-time setup. It works from any screen, so a
+// device that cannot be operated by touch can still be cleared. Letting go early
+// cancels. Returns true while the warning owns the screen.
+static bool factoryResetHeld() {
+  static unsigned long downAt = 0;
+  if (digitalRead(PIN_BOOT) != LOW) { downAt = 0; return false; }
+  const unsigned long now = millis();
+  if (!downAt) { downAt = now ? now : 1; Serial.println("BOOT button down"); }
+  const unsigned long held = now - downAt;
+  if (held < FACTORY_WARN_MS) return false;
+  if (held >= FACTORY_HOLD_MS) {
+    Serial.println("FACTORY RESET: erasing saved settings");
+    gfx->fillScreen(C_BLACK);
+    UI_Text(240, 220, "ERASED", 4, C_RED);
+    UI_Text(240, 280, "Restarting", 2, C_MID);
+    gfx->flush();
+    Settings_Erase();
+    Info_EraseStore();
+    WiFi.disconnect(true, true);       // also the copy the Wi-Fi driver keeps
+    delay(800);
+    ESP.restart();
+  }
+  char buf[24];
+  gfx->fillScreen(C_BLACK);
+  UI_Text(240, 120, "FACTORY RESET", 3, C_RED);
+  snprintf(buf, sizeof(buf), "%lu", (FACTORY_HOLD_MS - held) / 1000 + 1);
+  UI_Text(240, 190, buf, 8, C_AMBER);
+  UI_Text(240, 290, "Keep holding to erase", 2, C_AMBER);
+  UI_Text(240, 316, "Wi-Fi, postcode, settings", 2, C_MID);
+  UI_Text(240, 366, "Let go to cancel", 2, C_GREEN);
+  gfx->flush();
+  return true;
 }
 
 // --------------------------------------------------------------------- loop --
 void App_Loop() {
   Watchdog_Feed();
+  // A line typed over USB. "wipe card" empties the memory card (for a card of unknown
+  // history, when there is no reader to hand).
+  static char cmd[16]; static int cmdN = 0;
+  while (Serial.available()) {
+    const char ch = (char)Serial.read();
+    if (ch == '\n' || ch == '\r') {
+      cmd[cmdN] = '\0';
+      if (!strcmp(cmd, "wipe card")) Info_WipeCard();
+      else if (!strcmp(cmd, "list card")) Info_ListCard();
+      else if (!strcmp(cmd, "clear photos")) Info_EraseStore();
+      cmdN = 0;
+    } else if (cmdN < (int)sizeof(cmd) - 1) cmd[cmdN++] = ch;
+  }
+  static bool warned = false;
+  if (factoryResetHeld()) { warned = true; delay(20); return; }
+  if (warned) {                        // let go early: the QR screen is drawn once, so put it back
+    warned = false;
+    if (s_scr == SC_PORTAL) Portal_Redraw();
+  }
   const unsigned long now = millis();
 
   if (s_buzzOffAt && (long)(now - s_buzzOffAt) >= 0) { TCA9554_SetPin(EXIO_BUZZER, false); s_buzzOffAt = 0; }
@@ -339,7 +531,15 @@ void App_Loop() {
   int gx = 0, gy = 0;
   unsigned long ta = millis();
   const Gesture g = pollTouch(&gx, &gy);
-  if (g != G_NONE) handleGesture(g, gx, gy);
+  if (g != G_NONE) {
+    // A touch on a dimmed screen only brightens it; the next one acts.
+    const bool wakeOnly = dimmedNow();
+    s_lastTouch = millis();
+    if (!wakeOnly) handleGesture(g, gx, gy);
+    applyBacklight();
+  }
+  // In the night hours nobody is watching: stop downloading until the screen is touched.
+  Net_SetResting(nightNow() && millis() - s_lastTouch > NIGHT_AWAKE_MS);
   if (millis() - ta > slowTouch) slowTouch = millis() - ta;
 
   if (s_scr == SC_PORTAL) {
@@ -408,6 +608,7 @@ void App_Loop() {
     Scope_Draw(s_snap, s_snapN, wifi);
     const unsigned long t1 = millis();
     gfx->flush();
+    frameShown();
     const unsigned long t2 = millis();
     if (t1 - t0 > slowDraw) slowDraw = t1 - t0;
     if (t2 - t1 > slowFlush) slowFlush = t2 - t1;
@@ -418,6 +619,9 @@ void App_Loop() {
                     frames * 1000.0f / (now - fpsT0), s_snapN, (unsigned)ESP.getFreeHeap(),
                     maxGap, slowDraw, slowFlush, slowTouch, slowKeep, slowData, slowLog,
                     (unsigned)(LCD_VsyncCount() - panel0), wifiDown, (int)WiFi.RSSI());
+      char st[200];
+      Net_Status(st, sizeof(st));
+      Serial.printf("NET: %s\n", st);
       slowLog = millis() - tl;                    // shown in the next line
       fpsT0 = now; frames = 0; maxGap = 0; slowDraw = 0; slowFlush = 0; slowTouch = 0; slowKeep = 0; slowData = 0;
       wifiDown = 0; panel0 = LCD_VsyncCount();
@@ -428,12 +632,15 @@ void App_Loop() {
   lastDraw = now;
   fpsT0 = now; frames = 0;
   switch (s_scr) {
-    case SC_DETAIL:   Detail_Draw(s_selCache, s_selMiss > 0); break;
-    case SC_CLOCK:    Clock_Draw(s_snapN, wifi, Net_EverOk() && Net_DataAgeMs() < DATA_STALE_MS); break;
+    case SC_DETAIL:   Detail_Draw(s_selCache, s_selMiss > 0, s_detailPage); break;
+    case SC_CLOCK:    Clock_Draw(s_snapN, wifi, Net_EverOk() && Net_DataAgeMs() < FETCH_BACKGROUND_MS + DATA_STALE_MS); break;
     case SC_SETTINGS: SettingsScreen_Draw(); break;
     case SC_NIGHT:    NightScreen_Draw(); break;
-    case SC_PLACE:    PlaceScreen_Draw(); break;
+    case SC_PLACE:
+    case SC_PASS:     Keypad_Draw(); break;
+    case SC_WIFI:     WifiScreen_Draw(); break;
     default: break;
   }
   gfx->flush();
+  frameShown();
 }

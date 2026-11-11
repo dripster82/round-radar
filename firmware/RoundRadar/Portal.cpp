@@ -92,13 +92,15 @@ static void drawQrScreen(bool canCancel) {
   UI_Text(240, 322, "or join Wi-Fi", 2, C_MID);
   UI_Text(240, 346, AP_SSID, 3, C_GREEN);
   UI_Text(240, 382, "then open 192.168.4.1", 2, C_MID);
-  if (canCancel) UI_Text(240, 416, "Hold to cancel", 2, C_AMBER);
+  if (canCancel) UI_Text(240, 416, "Hold to go back", 2, C_AMBER);
   gfx->flush();
 }
 
 void Portal_Begin(bool canCancel) {
   Setup_DrawSplash("Looking for Wi-Fi");
-  WiFi.disconnect(true);
+  // A network already joined stays joined beside the setup network, so aircraft keep
+  // arriving until the form is saved. A join still in progress would block the search.
+  if (WiFi.status() != WL_CONNECTED) WiFi.disconnect(true);
   WiFi.mode(WIFI_AP_STA);
   delay(100);
 
@@ -125,6 +127,8 @@ void Portal_Begin(bool canCancel) {
   Serial.printf("SETUP: network \"%s\" up at %s\n", AP_SSID, WiFi.softAPIP().toString().c_str());
   drawQrScreen(canCancel);
 }
+
+void Portal_Redraw() { if (s_srv) drawQrScreen(true); }
 
 bool Portal_Loop(PortalResult* out) {
   if (!s_srv) return false;

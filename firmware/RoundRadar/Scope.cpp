@@ -12,6 +12,9 @@
 #include "esp_heap_caps.h"
 #include <WiFi.h>
 #include <math.h>
+extern "C" {
+#include "qrcode.h"
+}
 
 #define CX 240
 #define CY 240
@@ -57,8 +60,10 @@ static int16_t s_apX[AIRPORT_N], s_apY[AIRPORT_N];
 static bool    s_apOn[AIRPORT_N];
 
 static uint16_t shade(uint8_t v) {
+  if (Theme_Red()) return (uint16_t)(((31 * v / 255) << 11) | ((9 * v / 255) << 5) | (3 * v / 255));
   return (uint16_t)(((7 * v / 255) << 11) | ((63 * v / 255) << 5) | (15 * v / 255));
 }
+void Scope_ThemeChanged() { for (int i = 0; i < 256; i++) s_pal[i] = shade((uint8_t)i); }
 
 void Scope_Invalidate() { s_dirty = true; }
 
@@ -383,11 +388,20 @@ void Scope_Draw(const Aircraft* list, int n, bool wifi) {
   const float scale = (float)R_SCOPE / RANGES_KM[cfg.rangeIdx];
   int shown = 0;
   s_pn = 0;
+  // Between fetches each aircraft is moved on along its track at its own speed, so
+  // the picture stays smooth although downloads are kept few (to spare mobile data).
+  const float sinceS = stale ? 0.0f : age / 1000.0f;
   if (!hidden && wifi) {
     for (int i = 0; i < n; i++) {
       const Aircraft& a = list[i];
+      float lat = a.lat, lon = a.lon;
+      if (a.hasTrack && sinceS > 0) {
+        const float km = a.gsKt * 0.000514444f * sinceS, tr = a.track * 0.0174532925f;
+        lat += km * cosf(tr) / 110.57f;
+        lon += km * sinf(tr) / (111.32f * cosf(lat * 0.0174532925f));
+      }
       float fx, fy;
-      project(a.lat, a.lon, &fx, &fy);
+      project(lat, lon, &fx, &fy);
       const int x = (int)fx, y = (int)fy;
       const int dx = x - CX, dy = y - CY;
       if (dx * dx + dy * dy > R_SCOPE * R_SCOPE) continue;
@@ -397,7 +411,7 @@ void Scope_Draw(const Aircraft* list, int n, bool wifi) {
       for (int k = 0; k < a.trailN; k++) {
         float tx, ty;
         project(a.trailLat[k], a.trailLon[k], &tx, &ty);
-        gfx->fillCircle((int)tx, (int)ty, 2, stale ? C_DIM + 0x2104 : shade((uint8_t)(150 - k * 30)));
+        gfx->fillCircle((int)tx, (int)ty, 2, stale ? C_GREY : shade((uint8_t)(150 - k * 30)));
       }
       drawPlane(x, y, a.track, a.hasTrack, col);
 
@@ -427,6 +441,8 @@ void Scope_Draw(const Aircraft* list, int n, bool wifi) {
     UI_Text(CX, 252, "trying again", 2, C_AMBER);
   } else if (!Net_EverOk()) {
     UI_Text(CX, 56, "Getting aircraft", 2, C_MID);
+  } else if (Net_Resting()) {
+    UI_Text(CX, 56, "Resting: touch to wake", 2, C_MID);
   } else if (age > DATA_HIDE_MS) {
     UI_Text(CX, 56, "No aircraft data", 2, C_AMBER);
   } else if (stale) {
@@ -467,12 +483,121 @@ static void withCommas(char* out, size_t cap, long v) {
   else                 snprintf(out, cap, "%ld", v);
 }
 
-void Detail_Draw(const Aircraft& a, bool lost) {
+// The photo, drawn straight into the frame. In the red night colours it keeps its own
+// colours but is drawn 30% transparent, so it is not the brightest thing in a dark room.
+static void drawPhoto(const AcInfo& in, int top) {
+  const int x0 = CX - in.pw / 2, y0 = top + (PHOTO_H - in.ph) / 2;
+  uint16_t* fb = gfx->getFramebuffer();
+  if (!fb || x0 < 0 || y0 < 0 || x0 + in.pw > 480 || y0 + in.ph > 480) return;
+  const bool red = Theme_Red();
+  for (int y = 0; y < in.ph; y++) {
+    const uint16_t* s = in.photo + y * in.pw;
+    uint16_t* d = fb + (y0 + y) * 480 + x0;
+    if (!red) { memcpy(d, s, in.pw * 2); continue; }
+    for (int x = 0; x < in.pw; x++) {
+      const uint16_t p = s[x];
+      d[x] = (uint16_t)(((((p >> 11) & 0x1F) * 179 >> 8) << 11) | ((((p >> 5) & 0x3F) * 179 >> 8) << 5) | ((p & 0x1F) * 179 >> 8));   // 70%
+    }
+  }
+}
+
+// Which of the detail pages this is: a row of dots at the foot.
+static void pageDots(int page) {
+  for (int i = 0; i < DETAIL_PAGES; i++) {
+    const int x = CX + (i * 2 - (DETAIL_PAGES - 1)) * 10;
+    if (i == page) gfx->fillCircle(x, 436, 4, C_AMBER);
+    else           gfx->drawCircle(x, 436, 4, C_GREY);
+  }
+}
+
+// Third details page: a QR code that opens the photo's own page on the site it came
+// from, so the photographer and the full-size picture are one scan away.
+static void detailLink(const Aircraft& a) {
+  AcInfo in;
+  Info_Get(&in);
+  const bool mine = strcmp(in.hex, a.hex) == 0;
+  const size_t len = mine ? strlen(in.link) : 0;
+  if (!len) {
+    UI_Text(CX, 38, a.callsign[0] ? a.callsign : a.hex, 3, C_AMBER);
+    UI_Text(CX, 212, (!mine || in.loading) ? "Getting photo" : "No photo page", 2, C_MID);
+    if (mine && !in.loading) UI_Text(CX, 236, "for this aircraft", 2, C_MID);
+    return;
+  }
+  // The smallest code that holds the address (bytes at the lowest error correction).
+  static const uint16_t CAP[] = { 0, 17, 32, 53, 78, 106, 134, 154, 192, 230, 271 };
+  uint8_t version = 3;
+  while (version < 10 && CAP[version] < len) version++;
+  static uint8_t data[420];                    // enough for version 10
+  QRCode qr;
+  if (qrcode_initText(&qr, data, version, ECC_LOW, in.link) < 0) return;
+  const int m = 256 / (qr.size + 2);           // a clear margin of one module all round
+  const int box = (qr.size + 2) * m, x0 = CX - box / 2, y0 = 202 - box / 2;
+  UI_Text(CX, 44, "Scan for the photo", 2, C_MID);
+  // Light squares in the theme's brightest colour: white by day, red in the night hours.
+  gfx->fillRect(x0, y0, box, box, Theme_Red() ? C_GREEN : C_WHITE);
+  for (int y = 0; y < qr.size; y++)
+    for (int x = 0; x < qr.size; x++)
+      if (qrcode_getModule(&qr, x, y)) gfx->fillRect(x0 + (x + 1) * m, y0 + (y + 1) * m, m, m, C_BLACK);
+  char buf[40];
+  snprintf(buf, sizeof(buf), "Photo: %s", in.credit);
+  UI_Text(CX, 352, buf, 2, C_GREEN);
+  UI_Text(CX, 378, in.site, 2, C_MID);
+}
+
+// Second details page: a photo of this very aircraft, where it is flying from and to,
+// and who operates it.
+static void detailMore(const Aircraft& a) {
+  AcInfo in;
+  Info_Get(&in);
+  const bool mine = strcmp(in.hex, a.hex) == 0;
+  char buf[48];
+
+  UI_Text(CX, 38, a.callsign[0] ? a.callsign : a.hex, 3, C_AMBER);
+
+  const int top = 72;
+  if (mine && in.photo) {
+    drawPhoto(in, top);
+    snprintf(buf, sizeof(buf), "Photo: %s", in.credit);
+    UI_Text(CX, 278, buf, 2, C_MID);
+  } else {
+    gfx->drawRect(CX - PHOTO_W / 2, top, PHOTO_W, PHOTO_H, C_DIM);
+    UI_Text(CX, top + PHOTO_H / 2 - 8, (!mine || in.loading) ? "Getting photo" : "No photo found", 2, C_MID);
+  }
+
+  if (mine && in.from[0]) {
+    snprintf(buf, sizeof(buf), "%s > %s", in.from, in.to);
+    UI_Text(CX, 304, buf, 3, C_AMBER);
+    snprintf(buf, sizeof(buf), "%.13s to %.13s", in.fromCity, in.toCity);
+    UI_Text(CX, 336, buf, 2, C_GREEN);
+  } else {
+    UI_Text(CX, 320, (!mine || in.loading) ? "Looking up route" : "Route not known", 2, C_MID);
+  }
+
+  const char* who = (mine && in.airline[0]) ? in.airline : a.op;
+  if (who[0]) UI_Text(CX, 360, who, 2, C_GREEN);
+
+  buf[0] = '\0';
+  auto add = [&](const char* s) {
+    if (!s[0]) return;
+    if (buf[0]) strlcat(buf, "  ", sizeof(buf));
+    strlcat(buf, s, sizeof(buf));
+  };
+  add(a.type); add(a.reg);
+  if (a.squawk[0]) { char sq[12]; snprintf(sq, sizeof(sq), "sq %s", a.squawk); add(sq); }
+  UI_Text(CX, 384, buf, 2, C_MID);
+}
+
+void Detail_Draw(const Aircraft& a, bool lost, int page) {
   gfx->fillScreen(C_BLACK);
   char buf[40], num[16];
+  pageDots(page);
+  if (page == 1) { detailMore(a); return; }
+  if (page == 2) { detailLink(a); return; }
 
   UI_Text(CX, 62, a.callsign[0] ? a.callsign : a.hex, 5, C_AMBER);
-  snprintf(buf, sizeof(buf), "%s%s%s", a.type[0] ? a.type : "", (a.type[0] && a.reg[0]) ? "  " : "", a.reg);
+  // The type in words where the feed has it, otherwise its code and the registration.
+  if (a.desc[0]) snprintf(buf, sizeof(buf), "%.30s", a.desc);
+  else snprintf(buf, sizeof(buf), "%s%s%s", a.type[0] ? a.type : "", (a.type[0] && a.reg[0]) ? "  " : "", a.reg);
   UI_Text(CX, 116, buf, 2, C_GREEN);
   gfx->drawFastHLine(90, 146, 300, C_DIM);
 
@@ -508,9 +633,10 @@ void Detail_Draw(const Aircraft& a, bool lost) {
   row("Distance", buf);
 
   if (lost) {
-    UI_Text(CX, 384, "Signal lost", 2, C_AMBER);
-    UI_Text(CX, 408, "last known values", 2, C_AMBER);
+    UI_Text(CX, 380, "Signal lost", 2, C_AMBER);
+    UI_Text(CX, 404, "last known values", 2, C_AMBER);
   } else {
-    UI_Text(CX, 396, "Tap to close", 2, C_MID);
+    UI_Text(CX, 380, "Tap to close", 2, C_MID);
+    UI_Text(CX, 402, "Swipe for photo", 2, C_MID);
   }
 }

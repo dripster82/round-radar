@@ -111,3 +111,6 @@ uint32_t LCD_VsyncCount();
 // Backlight, 0-100.
 void Backlight_Init();
 void Set_Backlight(uint8_t light);
+// Round Radar: the bus that sets the panel up at start is done with after that, and
+// the memory card's slot is wired to the same two pins. Hands them over.
+void LCD_ReleaseSetupBus();
