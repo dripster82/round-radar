@@ -12,6 +12,7 @@
 #include "esp_heap_caps.h"
 #include <WiFi.h>
 #include <math.h>
+#include "font/glcdfont.h"     // the screen font's dots, for lettering drawn at an angle
 extern "C" {
 #include "qrcode.h"
 }
@@ -501,6 +502,36 @@ static void drawPhoto(const AcInfo& in, int top) {
   }
 }
 
+// "SIMILAR" on a dark strip across the photo's top right corner, at 45 degrees: the
+// photo is of another aircraft of the same type, standing in for this one's own.
+static void similarStrip(int x1, int y0, int pw, int ph) {
+  uint16_t* fb = gfx->getFramebuffer();
+  if (!fb || pw < 110 || ph < 110) return;
+  const int D = 84, E = 18;                    // how far in from the corner, and half the strip's width
+  for (int y = y0; y < y0 + D + E; y++)
+    for (int x = x1 - D - E; x < x1; x++) {
+      if (abs((x1 - x) + (y - y0) - D) > E) continue;
+      const uint16_t p = fb[y * 480 + x];      // darken to about a fifth
+      fb[y * 480 + x] = (uint16_t)(((((p >> 11) & 0x1F) * 56 >> 8) << 11) | ((((p >> 5) & 0x3F) * 56 >> 8) << 5) | ((p & 0x1F) * 56 >> 8));
+    }
+  // Every lit dot of the upright lettering is moved to its turned place.
+  static const char WORD[] = "SIMILAR";
+  const int size = 2, n = sizeof(WORD) - 1, w = n * 6 * size, h = 8 * size;
+  const float k = 0.70710678f, cx = x1 - D / 2, cy = y0 + D / 2;
+  for (int i = 0; i < n; i++)
+    for (int col = 0; col < 5; col++) {
+      const uint8_t bits = pgm_read_byte(&font[WORD[i] * 5 + col]);
+      for (int row = 0; row < 8; row++) {
+        if (!(bits & (1 << row))) continue;
+        for (int sub = 0; sub < size * size; sub++) {
+          const float sx = (i * 6 + col) * size + sub % size - (w - size) / 2.0f;
+          const float sy = row * size + sub / size - (h - size) / 2.0f;
+          gfx->fillRect((int)lroundf(cx + (sx - sy) * k), (int)lroundf(cy + (sx + sy) * k), 2, 2, C_AMBER);
+        }
+      }
+    }
+}
+
 // Which of the detail pages this is: a row of dots at the foot.
 static void pageDots(int page) {
   for (int i = 0; i < DETAIL_PAGES; i++) {
@@ -557,8 +588,12 @@ static void detailMore(const Aircraft& a) {
   const int top = 72;
   if (mine && in.photo) {
     drawPhoto(in, top);
-    snprintf(buf, sizeof(buf), "Photo: %s", in.credit);
-    UI_Text(CX, 278, buf, 2, C_MID);
+    if (in.similar) similarStrip(CX - in.pw / 2 + in.pw, top + (PHOTO_H - in.ph) / 2, in.pw, in.ph);
+    if (in.similar && in.loading) UI_Text(CX, 278, "Loading image", 2, C_AMBER);
+    else {
+      snprintf(buf, sizeof(buf), "Photo: %s", in.credit);
+      UI_Text(CX, 278, buf, 2, C_MID);
+    }
   } else {
     gfx->drawRect(CX - PHOTO_W / 2, top, PHOTO_W, PHOTO_H, C_DIM);
     UI_Text(CX, top + PHOTO_H / 2 - 8, (!mine || in.loading) ? "Getting photo" : "No photo found", 2, C_MID);

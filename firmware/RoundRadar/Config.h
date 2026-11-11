@@ -66,6 +66,13 @@
 
 #define SWEEP_PERIOD_MS 4000UL
 #define LONG_PRESS_MS 800UL
+// The battery's voltage reaches this pin through a divider that passes one third of it
+// (200K over 100K on Waveshare's schematic).
+#define PIN_BATTERY 4
+// The whole picture is drawn turned by this many degrees, so the device sits with its
+// USB socket at the bottom (it is at about half past four with the picture unturned).
+// "rotate <degrees>" over USB changes it on one device; 0 costs no frame rate.
+#define SCREEN_TURN_DEG 315
 #define PIN_BOOT 0                    // the BOOT button on the side; pressed = low
 #define FACTORY_WARN_MS 1000UL        // held this long: the warning shows
 #define FACTORY_HOLD_MS 8000UL        // held this long: everything saved is erased

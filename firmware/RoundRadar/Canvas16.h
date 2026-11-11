@@ -22,6 +22,8 @@
 #include <Arduino_GFX_Library.h>
 #include "esp_heap_caps.h"
 #include "Display_ST7701.h"
+#include <math.h>
+#include <string.h>
 
 class Canvas16 : public Arduino_GFX {
  public:
@@ -36,8 +38,37 @@ class Canvas16 : public Arduino_GFX {
   void useExternalBuffer(uint16_t* fb, int idx) {
     if (_owned && _fb) heap_caps_free(_fb);
     _fb = fb;
+    _back = fb;
     _fbIndex = idx;
     _owned = false;
+  }
+
+  // Round Radar: show everything turned by this many degrees, so the device can sit
+  // with its USB socket wherever suits. The screen is round, so any angle works. The
+  // picture is then drawn into a buffer of its own and turned into the panel's on
+  // flush(), which costs some frame rate; at 0 nothing changes and nothing is copied.
+  void setTurn(int deg) {
+    deg = ((deg % 360) + 360) % 360;
+    if (deg == _turn || _owned || !_back) return;
+    if (deg && !_off) {
+      _off = (uint16_t*)heap_caps_malloc((size_t)WIDTH * HEIGHT * 2, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+      if (!_off) return;
+      memset(_off, 0, (size_t)WIDTH * HEIGHT * 2);
+    }
+    _turn = deg;
+    const float th = deg * 0.01745329252f;
+    _cos = cosf(th);
+    _sin = sinf(th);
+    _fb = deg ? _off : _back;
+  }
+  int turn() const { return _turn; }
+
+  // Where a point on the glass is in the picture as drawn (for touches).
+  void turnPoint(int* x, int* y) const {
+    if (!_turn) return;
+    const float dx = *x - 239.5f, dy = *y - 239.5f;
+    *x = (int)lroundf(239.5f + dx * _cos + dy * _sin);
+    *y = (int)lroundf(239.5f - dx * _sin + dy * _cos);
   }
 
   bool begin(int32_t speed = GFX_NOT_DEFINED) override {
@@ -62,12 +93,13 @@ class Canvas16 : public Arduino_GFX {
   void flush(bool force_flush = false) override {
     (void)force_flush;
     if (!_fb) return;
-    LCD_Flush(_fb);
-    if (!_owned) {
-      int next = _fbIndex ^ 1;
-      uint16_t* nb = LCD_FrameBuffer(next);
-      if (nb) { _fb = nb; _fbIndex = next; }
-    }
+    if (_owned) { LCD_Flush(_fb); return; }
+    if (_turn) turnInto(_back);
+    LCD_Flush(_back);
+    int next = _fbIndex ^ 1;
+    uint16_t* nb = LCD_FrameBuffer(next);
+    if (nb) { _back = nb; _fbIndex = next; }
+    _fb = _turn ? _off : _back;
   }
 
   // --- Core writers (rotation 0 only). All are bounds-checked so a stray
@@ -122,6 +154,35 @@ class Canvas16 : public Arduino_GFX {
   }
 
  private:
+  // Copy the drawn picture into dst, turned about the centre. Only the round part of
+  // the screen is done, a row at a time, stepping through the source in fixed point;
+  // each dot takes the nearest source dot.
+  void turnInto(uint16_t* dst) {
+    static int16_t half[480];
+    static bool made = false;
+    if (!made) {
+      for (int y = 0; y < 480; y++) { const float dy = y - 239.5f; half[y] = (int16_t)sqrtf(fmaxf(0.0f, 239.0f * 239.0f - dy * dy)); }
+      made = true;
+    }
+    const int32_t c = (int32_t)lroundf(_cos * 65536.0f), s = (int32_t)lroundf(_sin * 65536.0f);
+    for (int y = 0; y < 480; y++) {
+      const int x0 = 240 - half[y], x1 = 239 + half[y];
+      if (x1 < x0) continue;
+      const float dx = x0 - 239.5f, dy = y - 239.5f;
+      int32_t fx = (int32_t)((239.5f + dx * _cos + dy * _sin) * 65536.0f) + 32768;
+      int32_t fy = (int32_t)((239.5f - dx * _sin + dy * _cos) * 65536.0f) + 32768;
+      uint16_t* d = dst + y * 480 + x0;
+      for (int x = x0; x <= x1; x++, fx += c, fy -= s) {
+        const uint32_t sx = (uint32_t)(fx >> 16), sy = (uint32_t)(fy >> 16);
+        *d++ = (sx < 480 && sy < 480) ? _off[sy * 480 + sx] : 0;
+      }
+    }
+  }
+
+  uint16_t* _off = nullptr;    // the picture as drawn, when turned
+  uint16_t* _back = nullptr;   // the panel buffer not on screen
+  int       _turn = 0;
+  float     _cos = 1.0f, _sin = 0.0f;
   uint16_t* _fb = nullptr;
   int       _fbIndex = 0;     // which panel framebuffer _fb points at
   bool      _owned = false;   // false = the buffer belongs to the panel driver

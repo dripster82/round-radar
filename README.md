@@ -77,7 +77,9 @@ Screen mockups and the full flow between screens are in [mockups.html](mockups.h
   heading, climb and distance. Tap to close.
 - **Swipe sideways** on the details for a second page: a photo of that aircraft with the
   photographer's name, where the flight is from and to, the airline, type code, registration
-  and squawk. Swipe again for a third: a QR code that opens the photo's own page on the site
+  and squawk. While an aircraft's own photo downloads, or when it has
+  none, a stored photo of another aircraft of the same type stands in, with a strip marked
+  SIMILAR across its corner. Swipe again for a third: a QR code that opens the photo's own page on the site
   it came from (the photo sites ask for that link). Dots at the foot show which page is open. The photo and route
   are only fetched when this page is opened, about 50 KB each time. Every aircraft
   looked up is kept, so opening it again uses no data, even after a restart. With a memory card
@@ -96,6 +98,10 @@ Screen mockups and the full flow between screens are in [mockups.html](mockups.h
 - **Long press** opens settings: brightness, 12 or 24 hour clock, night dimming (on or off, with
   its own From and Until hours), the buzzer ping on or off, a **Postcode** button, and a
   **Wi-Fi setup** button.
+- **The picture is turned 315 degrees**, touches included, so the device sits with its USB
+  socket at the bottom (unturned, the socket is at about half past four). It is a build
+  setting, `SCREEN_TURN_DEG` in `Config.h`; `rotate <degrees>` over USB changes it on one
+  device. Turned, the scope runs at about 10 pictures a second; at 0 it runs at about 15.
 - **Wi-Fi setup** lists the networks nearby on the device, strongest first, five to a page.
   Tapping one opens the keypad for its password (lower case, capitals and symbols). The saved
   network is only replaced once the new one has joined. A **QR code** button on the list leads

@@ -34,6 +34,14 @@ static unsigned long s_buzzOffAt = 0;
 static char s_pinged[16][8];
 static int  s_pingedNext = 0;
 
+// The battery's voltage, averaged over a few readings to steady it. With no battery
+// fitted this is whatever the charger leaves on the empty socket, not a battery.
+static float batteryVolts() {
+  uint32_t mv = 0;
+  for (int i = 0; i < 8; i++) mv += analogReadMilliVolts(PIN_BATTERY);
+  return mv / 8 * 3 / 1000.0f;
+}
+
 // Sound the buzzer; the loop switches it off again.
 static void buzz(unsigned long ms) {
   TCA9554_SetPin(EXIO_BUZZER, true);
@@ -52,6 +60,9 @@ static Gesture pollTouch(int* gx, int* gy) {
   Touch_Read(&t);
   const unsigned long now = millis();
   if (t.points) {
+    int tx = t.x, ty = t.y;
+    gfx->turnPoint(&tx, &ty);                 // the picture may be turned on the glass
+    t.x = tx; t.y = ty;
     if (!down) { down = true; longFired = false; sx = t.x; sy = t.y; t0 = now; }
     lx = t.x; ly = t.y; lastSeen = now;
     if (!longFired && now - t0 >= LONG_PRESS_MS && abs(lx - sx) < SWIPE_PX / 2 && abs(ly - sy) < SWIPE_PX / 2) {
@@ -314,6 +325,7 @@ void App_Setup() {
   if (fb1) gfx->useExternalBuffer(fb1, 1);
   else if (!gfx->begin()) { Serial.println("FATAL: no memory for the screen (check PSRAM is set to OPI)"); while (true) delay(1000); }
   gfx->setTextWrap(false);
+  gfx->setTurn(cfg.rotate);
   gfx->fillScreen(C_BLACK); gfx->flush();
   gfx->fillScreen(C_BLACK); gfx->flush();     // both buffers start black
   applyBacklight();
@@ -372,7 +384,7 @@ static void handleGesture(Gesture g, int x, int y) {
       else if (g == G_LEFT || g == G_RIGHT) {
         // Left for the next page, right for the one before; round and round.
         s_detailPage = (s_detailPage + (g == G_LEFT ? 1 : DETAIL_PAGES - 1)) % DETAIL_PAGES;
-        if (s_detailPage != 0) Info_Request(s_selCache.hex, s_selCache.callsign);   // fetched only when looked at
+        if (s_detailPage != 0) Info_Request(s_selCache.hex, s_selCache.callsign, s_selCache.type);   // fetched only when looked at
       }
       break;
     case SC_CLOCK:
@@ -385,6 +397,7 @@ static void handleGesture(Gesture g, int x, int y) {
         const bool pingWas = cfg.ping;
         const SettingsAction a = s_scr == SC_SETTINGS ? SettingsScreen_Tap(x, y) : NightScreen_Tap(x, y);
         if (a == SA_CHANGED) {
+          gfx->setTurn(cfg.rotate);
           Settings_Save(); applyBacklight();
           if (cfg.ping && !pingWas) { Serial.println("PING: test beep"); buzz(PING_MS); }   // lets the sound be heard when choosing it
         }
@@ -512,6 +525,8 @@ void App_Loop() {
       cmd[cmdN] = '\0';
       if (!strcmp(cmd, "wipe card")) Info_WipeCard();
       else if (!strcmp(cmd, "list card")) Info_ListCard();
+      else if (!strncmp(cmd, "rotate ", 7)) { cfg.rotate = (int16_t)(((atoi(cmd + 7) % 360) + 360) % 360); gfx->setTurn(cfg.rotate); Settings_Save(); Serial.printf("ROTATE: %d\n", cfg.rotate); }
+      else if (!strcmp(cmd, "battery")) Serial.printf("BATT: %.2f V\n", batteryVolts());
       else if (!strcmp(cmd, "clear photos")) Info_EraseStore();
       cmdN = 0;
     } else if (cmdN < (int)sizeof(cmd) - 1) cmd[cmdN++] = ch;
@@ -622,6 +637,7 @@ void App_Loop() {
       char st[200];
       Net_Status(st, sizeof(st));
       Serial.printf("NET: %s\n", st);
+      Serial.printf("BATT: %.2f V\n", batteryVolts());
       slowLog = millis() - tl;                    // shown in the next line
       fpsT0 = now; frames = 0; maxGap = 0; slowDraw = 0; slowFlush = 0; slowTouch = 0; slowKeep = 0; slowData = 0;
       wifiDown = 0; panel0 = LCD_VsyncCount();

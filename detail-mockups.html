@@ -12,6 +12,7 @@
   main { max-width:1100px; margin:0 auto; padding:24px 16px 64px; }
   h1 { font-size:26px; margin:0 0 4px; }
   p { margin:6px 0 12px; max-width:70ch; }
+  h2 { font-size:21px; margin:44px 0 6px; padding-top:16px; border-top:1px solid var(--line); }
   .muted { color:var(--muted); }
   .bar { display:flex; flex-wrap:wrap; gap:8px; margin:14px 0 6px; }
   button { font:inherit; padding:6px 14px; border-radius:8px; border:1px solid var(--line); background:transparent; color:var(--ink); cursor:pointer; }
@@ -34,6 +35,9 @@
   <button id="bRed" aria-pressed="false">Night red</button>
 </div>
 <div class="grid" id="grid"></div>
+<h2>Placeholder photo: ways to mark it</h2>
+<p class="muted">While the aircraft's own photo downloads, the page shows a stored photo of another aircraft of the same type (here with a red tail, to stand for a different airline). Each option below is a way of saying "this is not the real one yet". Options 2, 6 and 10 move.</p>
+<div class="grid" id="opts"></div>
 </main>
 <script>
 const FONT = "000000000000005f00000007000700147f147f14242a7f2a12231308646236495620500008070300001c2241000041221c002a1c7f1c2a08083e080800807030000808080808000060600020100804023e5149453e00427f400072494949462141494d331814127f1027454545393c4a49493141211109073649494936464949291e0000140000004034000000081422411414141414004122140802015909063e415d594e7c1211127c7f494949363e414141227f4141413e7f494949417f090909013e414151737f0808087f00417f41002040413f017f081422417f404040407f021c027f7f0408107f3e4141413e7f090909063e4151215e7f09192946264949493203017f01033f4040403f1f2040201f3f4038403f631408146303047804036159494d43007f4141410204081020004141417f04020102044040404040000307080020545478407f284444383844444428384444287f385454541800087e090218a4a49c787f0804047800447d40002040403d007f1028440000417f40007c047804787c080404783844444438fc1824241818242418fc7c08040408485454542404043f44243c4040207c1c2040201c3c4030403c44281028444c9090907c4464544c440008364100000077000000413608000201020402";
@@ -60,13 +64,13 @@ const hline = (g, x, y, w, col) => { g.fillStyle = col; g.fillRect(x, y, w, 1); 
 function rect(g, x, y, w, h, col) { g.fillStyle = col; g.fillRect(x, y, w, 1); g.fillRect(x, y + h - 1, w, 1); g.fillRect(x, y, 1, h); g.fillRect(x + w - 1, y, 1, h); }
 
 // ---- a stand-in photo, 150 x 100, enlarged smoothly ------------------------
-function photo(g, top, w, h) {
+function photo(g, top, w, h, tail, grey, alpha) {
   const s = document.createElement('canvas'); s.width = 150; s.height = 100;
   const p = s.getContext('2d');
   const sky = p.createLinearGradient(0, 0, 0, 100); sky.addColorStop(0, '#5d8fc4'); sky.addColorStop(0.7, '#bcd3e6'); sky.addColorStop(0.71, '#7d8a78'); sky.addColorStop(1, '#5c6658');
   p.fillStyle = sky; p.fillRect(0, 0, 150, 100);
   p.fillStyle = '#f4f4f1'; p.beginPath(); p.moveTo(18, 52); p.quadraticCurveTo(22, 44, 40, 44); p.lineTo(118, 44); p.quadraticCurveTo(136, 46, 138, 52); p.quadraticCurveTo(134, 57, 116, 57); p.lineTo(34, 57); p.closePath(); p.fill();
-  p.fillStyle = '#1d3f8f'; p.beginPath(); p.moveTo(20, 50); p.lineTo(10, 24); p.lineTo(22, 24); p.lineTo(42, 46); p.closePath(); p.fill();
+  p.fillStyle = tail || '#1d3f8f'; p.beginPath(); p.moveTo(20, 50); p.lineTo(10, 24); p.lineTo(22, 24); p.lineTo(42, 46); p.closePath(); p.fill();
   p.fillStyle = '#c9cdc9'; p.beginPath(); p.moveTo(62, 55); p.lineTo(40, 70); p.lineTo(52, 70); p.lineTo(92, 56); p.closePath(); p.fill();
   p.fillStyle = '#8b908b'; p.fillRect(66, 60, 16, 7);
   p.fillStyle = '#26303c'; for (let x = 44; x < 118; x += 5) p.fillRect(x, 48, 2, 2);
@@ -74,7 +78,8 @@ function photo(g, top, w, h) {
   const d = document.createElement('canvas'); d.width = w; d.height = h;
   const q = d.getContext('2d'); q.imageSmoothingEnabled = true; q.imageSmoothingQuality = 'low';
   q.drawImage(s, 0, 0, w, h);
-  g.globalAlpha = red ? 0.7 : 1;       // night red: full colour, 30% transparent over black
+  if (grey) { const im = q.getImageData(0, 0, w, h), a = im.data; for (let i = 0; i < a.length; i += 4) a[i] = a[i+1] = a[i+2] = (a[i] * 2 + a[i+1] * 5 + a[i+2]) >> 3; q.putImageData(im, 0, 0); }
+  g.globalAlpha = (red ? 0.7 : 1) * (alpha || 1);       // night red: full colour, 30% transparent over black
   g.drawImage(d, CX - w / 2, top + (PHOTO_H - h) / 2);
   g.globalAlpha = 1;
 }
@@ -142,6 +147,69 @@ function page2(g, a, st) {       // st: 'loading' | 'full' | 'none'
   text(g, CX, 384, [a.type, a.reg, a.squawk && 'sq ' + a.squawk].filter(Boolean).join('  '), 2, C.MID);
 }
 
+// ---- placeholder options ------------------------------------------------------
+const PX0 = CX - 150, PY0 = 72, PX1 = CX + 150, PY1 = 272;      // the photo's corners
+function badge(g, w, h) { g.fillStyle = 'rgba(0,0,0,0.72)'; g.fillRect(PX1 - w - 6, PY0 + 6, w, h); return [PX1 - w - 6, PY0 + 6]; }
+function spinner(g, cx, cy, r, t, col) { g.lineWidth = 3; g.strokeStyle = C.DIM; g.beginPath(); g.arc(cx, cy, r, 0, 7); g.stroke(); g.strokeStyle = col; g.beginPath(); g.arc(cx, cy, r, t * 5, t * 5 + 1.6); g.stroke(); }
+// Text turned 45 degrees the way the device would do it: every lit pixel of the upright
+// text is moved to its turned position and drawn as a 2 x 2 dot.
+function textTurned(g, cx, cy, str, size, col) {
+  const w = str.length * 6 * size, h = 8 * size;
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const q = c.getContext('2d'); textL(q, 0, 0, str, size, '#fff');
+  const d = q.getImageData(0, 0, w, h).data, k = Math.SQRT1_2;
+  g.fillStyle = col;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (d[(y * w + x) * 4 + 3] > 128) {
+    const sx = x - (w - size) / 2, sy = y - (h - size) / 2;
+    g.fillRect(Math.round(cx + (sx - sy) * k), Math.round(cy + (sx + sy) * k), 2, 2);
+  }
+}
+function band(g, d, half) {      // a strip across the top right corner, d pixels in from it
+  const e = Math.round(half * Math.SQRT2);
+  g.beginPath(); g.moveTo(PX1 - d - e, PY0); g.lineTo(PX1 - d + e, PY0); g.lineTo(PX1, PY0 + d - e); g.lineTo(PX1, PY0 + d + e); g.closePath(); g.fill();
+}
+const OPTS = [
+  ['1. Hourglass', 'Amber hourglass in the top right corner', (g, t) => { const [x, y] = badge(g, 30, 34); g.fillStyle = C.AMBER; g.fillRect(x + 6, y + 5, 18, 3); g.fillRect(x + 6, y + 26, 18, 3); g.beginPath(); g.moveTo(x + 8, y + 8); g.lineTo(x + 22, y + 8); g.lineTo(x + 15, y + 17); g.closePath(); g.fill(); g.beginPath(); g.moveTo(x + 15, y + 17); g.lineTo(x + 22, y + 26); g.lineTo(x + 8, y + 26); g.closePath(); g.fill(); }],
+  ['2. Spinner', 'A turning ring in the corner', (g, t) => { const [x, y] = badge(g, 34, 34); spinner(g, x + 17, y + 17, 10, t, C.AMBER); }],
+  ['3. Download arrow', 'An arrow dropping into a tray', (g, t) => { const [x, y] = badge(g, 32, 34); g.fillStyle = C.AMBER; g.fillRect(x + 14, y + 5, 4, 12); g.beginPath(); g.moveTo(x + 8, y + 15); g.lineTo(x + 24, y + 15); g.lineTo(x + 16, y + 23); g.closePath(); g.fill(); g.fillRect(x + 6, y + 26, 20, 3); }],
+  ['4. Black and white', 'No icon: the stand-in is grey, the real one arrives in colour', null, { grey: true }],
+  ['5. "SIMILAR" tag', 'A word, not an icon', (g, t) => { const [x, y] = badge(g, 96, 24); textL(g, x + 6, y + 4, 'SIMILAR', 2, C.AMBER); }],
+  ['6. Dimmed with spinner', 'Stand-in at half strength, ring in the middle', (g, t) => { spinner(g, CX, 172, 22, t, C.AMBER); }, { alpha: 0.45 }],
+  ['7. Dashed border', 'Amber dashes round the stand-in, solid nothing round the real one', (g, t) => { g.strokeStyle = C.AMBER; g.lineWidth = 3; g.setLineDash([10, 8]); g.strokeRect(PX0 + 1.5, PY0 + 1.5, 297, 197); g.setLineDash([]); }],
+  ['8. Caption only', 'The line under the photo says so; nothing on the picture', null, { caption: 'Similar aircraft, loading' }],
+  ['9. Corner ribbon', 'A folded amber corner, top right', (g, t) => { g.fillStyle = C.AMBER; g.beginPath(); g.moveTo(PX1 - 64, PY0); g.lineTo(PX1, PY0); g.lineTo(PX1, PY0 + 64); g.closePath(); g.fill(); g.fillStyle = '#000'; g.fillRect(PX1 - 20, PY0 + 10, 4, 14); g.fillRect(PX1 - 20, PY0 + 28, 4, 4); }],
+  ['11. "SIMILAR" across the corner', 'Amber strip at 45 degrees, black lettering', (g, t) => { g.fillStyle = C.AMBER; band(g, 84, 13); textTurned(g, PX1 - 42, PY0 + 42, 'SIMILAR', 2, '#000'); }],
+  ['12. The same, dark strip (CHOSEN, as built)', 'Black strip, amber lettering, and "Loading image" under the photo until the real one arrives', (g, t) => { g.fillStyle = 'rgba(0,0,0,0.78)'; band(g, 84, 13); textTurned(g, PX1 - 42, PY0 + 42, 'SIMILAR', 2, C.AMBER); }, { caption: 'Loading image' }],
+  ['10. Progress bar', 'A bar sweeping along the bottom edge', (g, t) => { g.fillStyle = 'rgba(0,0,0,0.6)'; g.fillRect(PX0, PY1 - 8, 300, 8); const x = ((t * 180) % 380) - 80; g.fillStyle = C.AMBER; g.fillRect(Math.max(PX0, PX0 + x), PY1 - 8, Math.min(80, 300 - x, 80 + x), 8); }],
+];
+function placeholderPage(g, o, t) {
+  const a = JET, extra = o[3] || {};
+  dots(g, 1);
+  text(g, CX, 38, a.callsign, 3, C.AMBER);
+  photo(g, 72, 300, 200, '#b3261e', extra.grey, extra.alpha);
+  if (o[2]) o[2](g, t);
+  text(g, CX, 278, extra.caption || 'Photo: J. Other', 2, extra.caption ? C.AMBER : C.MID);
+  text(g, CX, 320, 'Looking up route', 2, C.MID);
+  text(g, CX, 384, [a.type, a.reg, 'sq ' + a.squawk].join('  '), 2, C.MID);
+}
+let optCanvases = [];
+function drawOpts(t) {
+  C = red ? RED_T : GREEN_T;
+  OPTS.forEach((o, i) => { const g = optCanvases[i].getContext('2d'); g.globalAlpha = 1; g.fillStyle = '#000'; g.fillRect(0, 0, 480, 480); placeholderPage(g, o, t); });
+}
+function buildOpts() {
+  const grid = document.getElementById('opts');
+  for (const o of OPTS) {
+    const f = document.createElement('figure');
+    const c = document.createElement('canvas'); c.width = c.height = 480; optCanvases.push(c);
+    const cap = document.createElement('figcaption'); cap.innerHTML = '<b>' + o[0] + '</b><span>' + o[1] + '</span>';
+    f.append(c, cap); grid.append(f);
+  }
+  const start = performance.now();
+  const tick = () => { drawOpts((performance.now() - start) / 1000); setTimeout(tick, 70); };   // the device's own frame rate
+  tick();
+}
+
 // ---- sample aircraft --------------------------------------------------------
 const JET = { callsign:'RYR23JQ', desc:'BOEING 737 MAX 8', type:'B38M', reg:'EI-IJO', squawk:'5264',
   alt:'34,000 ft', speed:'447 kt', heading:'152 SE', climb:'level', dist:'18 km NE',
@@ -180,6 +248,7 @@ function draw() {
 document.getElementById('bSize').onclick = e => { const on = document.body.classList.toggle('actual'); e.target.setAttribute('aria-pressed', on); };
 document.getElementById('bRed').onclick = e => { red = !red; e.target.setAttribute('aria-pressed', red); draw(); };
 draw();
+buildOpts();
 </script>
 </body>
 </html>

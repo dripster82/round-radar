@@ -24,6 +24,7 @@ void Settings_Load() {
   cfg.nightLevel = prefs.getUChar("nlevel", 10);
   cfg.nightRed  = prefs.getBool("nred", false);
   cfg.ping      = prefs.getBool("ping", false);
+  cfg.rotate    = prefs.getShort("rot", SCREEN_TURN_DEG);
   prefs.end();
 
   // Guard against values written by an older or damaged build.
@@ -33,6 +34,7 @@ void Settings_Load() {
   if (cfg.nightFrom > 23) cfg.nightFrom = 22;
   if (cfg.nightTo > 23) cfg.nightTo = 7;
   if (cfg.nightLevel < 1 || cfg.nightLevel > 50) cfg.nightLevel = 10;
+  if (cfg.rotate < 0 || cfg.rotate >= 360) cfg.rotate = SCREEN_TURN_DEG;
 }
 
 void Settings_Erase() {
@@ -59,5 +61,6 @@ void Settings_Save() {
   prefs.putUChar("nlevel", cfg.nightLevel);
   prefs.putBool("nred", cfg.nightRed);
   prefs.putBool("ping", cfg.ping);
+  prefs.putShort("rot", cfg.rotate);
   prefs.end();
 }

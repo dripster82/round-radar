@@ -27,6 +27,7 @@ struct Settings {
   uint8_t screen;       // 0 = scope, 1 = clock
   uint8_t rangeIdx;
   uint8_t bright;       // 10..100
+  int16_t rotate;       // the whole picture turned by this many degrees (see SCREEN_TURN_DEG)
   bool    h24;
   bool    nightOn;
   uint8_t nightFrom;    // hour 0..23
@@ -80,6 +81,8 @@ bool     Net_LookupPostcode(const char* pc, float* lat, float* lon);
 struct AcInfo {
   char hex[8];
   char callsign[10];                  // the flight the route belongs to
+  char type[10];                      // type code, e.g. B38M
+  bool similar;                       // the photo is of another aircraft of this type, standing in
   bool loading;                       // still looking things up
   char from[5], to[5];                // airport codes; empty when the route is not known
   char fromCity[20], toCity[20];
@@ -91,7 +94,7 @@ struct AcInfo {
   char link[200];                     // the photo's own page there, shown as a QR code
 };
 void Info_Begin();
-void Info_Request(const char* hex, const char* callsign);   // looked up in the background
+void Info_Request(const char* hex, const char* callsign, const char* type);   // looked up in the background
 void Info_Get(AcInfo* out);
 bool Info_Pending();
 void Info_Service();                  // network task only

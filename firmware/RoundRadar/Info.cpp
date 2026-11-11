@@ -48,7 +48,7 @@ static const int    RAW_MAX  = 1024;           // largest picture accepted, each
 
 static SemaphoreHandle_t s_lock;
 static AcInfo    s_info;                       // what the page shows
-static char      s_reqHex[8], s_reqCall[10];
+static char      s_reqHex[8], s_reqCall[10], s_reqType[10];
 static volatile bool s_pending = false;
 static uint8_t*  s_body = nullptr;
 
@@ -92,7 +92,7 @@ void Info_Get(AcInfo* out) {
 }
 
 // Called from the drawing side.
-void Info_Request(const char* hex, const char* callsign) {
+void Info_Request(const char* hex, const char* callsign, const char* type) {
   xSemaphoreTake(s_lock, portMAX_DELAY);
   const uint32_t now = millis();
   Slot* hit = nullptr;
@@ -113,6 +113,7 @@ void Info_Request(const char* hex, const char* callsign) {
     s_info.loading = true;
     strlcpy(s_reqHex, hex, sizeof(s_reqHex));
     strlcpy(s_reqCall, callsign, sizeof(s_reqCall));
+    strlcpy(s_reqType, type, sizeof(s_reqType));
     s_pending = true;
   }
   xSemaphoreGive(s_lock);
@@ -162,7 +163,7 @@ static long get(HTTPClient& http, NetworkClientSecure& client, const char* url, 
 // One aircraft is two files named after its ICAO address: the record (.inf) and the
 // JPEG as it was downloaded (.jpg, about 30 KB; the drawn picture would be 120 KB).
 // Only the network task touches the storage.
-#define REC_MAGIC 0x52523033UL
+#define REC_MAGIC 0x52523034UL
 struct Rec { uint32_t magic; uint32_t savedAt; uint8_t hasPhoto; AcInfo info; };
 static bool decodeTo(uint16_t* dst, long len, int16_t* outW, int16_t* outH);
 
@@ -198,6 +199,16 @@ static bool store() {
     Serial.println("STORE: storage did not start, photos will not be kept");
   }
   return s_fs != nullptr;
+}
+
+// The file that names a stored aircraft of this type. False if the type is not known.
+static bool typePath(char* out, size_t cap, const char* type) {
+  char clean[10]; int n = 0;
+  for (const char* p = type; *p && n < 8; p++) if (isalnum((unsigned char)*p)) clean[n++] = *p;
+  clean[n] = '\0';
+  if (!n) return false;
+  snprintf(out, cap, "%s/type-%s.txt", s_dir, clean);
+  return true;
 }
 
 static void filePath(char* out, size_t cap, const char* hex, const char* ext) {
@@ -240,15 +251,62 @@ static void writeRecord(const AcInfo& r) {
   memset(&rec, 0, sizeof(rec));
   rec.magic = REC_MAGIC;
   rec.savedAt = (uint32_t)time(nullptr);
-  rec.hasPhoto = r.photo != nullptr;
+  rec.hasPhoto = r.photo != nullptr && !r.similar;
   rec.info = r;
   rec.info.photo = nullptr;
+  if (r.similar) {                                       // a stand-in is chosen afresh each time
+    rec.info.similar = false;
+    rec.info.credit[0] = rec.info.site[0] = rec.info.link[0] = '\0';
+  }
   char path[48];
   filePath(path, sizeof(path), r.hex, "inf");
   File f = s_fs->open(path, "w");
   if (!f) return;
   f.write((const uint8_t*)&rec, sizeof(rec));
   f.close();
+  // Note this aircraft as the one to stand in for others of its type.
+  if (rec.hasPhoto && typePath(path, sizeof(path), r.type)) {
+    File t = s_fs->open(path, "w");
+    if (t) { t.print(r.hex); t.close(); }
+  }
+}
+
+// While an aircraft's own photo downloads, or when it has none, show a stored photo
+// of another aircraft of the same type, marked as such on the page.
+static void attachSimilar(AcInfo& r) {
+  if (r.photo) return;
+  xSemaphoreTake(s_fsLock, portMAX_DELAY);
+  char path[48], hex[8] = "";
+  Rec rec;
+  bool ok = store() && typePath(path, sizeof(path), r.type);
+  if (ok) {
+    File t = s_fs->open(path, "r");
+    ok = t && t.readBytes(hex, sizeof(hex) - 1) >= 6;
+    if (t) t.close();
+    for (char* p = hex; *p; p++) if (!isalnum((unsigned char)*p)) { *p = '\0'; break; }
+    ok = ok && hex[0] && strcmp(hex, r.hex) != 0;
+  }
+  if (ok) {
+    filePath(path, sizeof(path), hex, "inf");
+    File f = s_fs->open(path, "r");
+    ok = f && f.read((uint8_t*)&rec, sizeof(rec)) == sizeof(rec) && rec.magic == REC_MAGIC && rec.hasPhoto;
+    if (f) f.close();
+  }
+  if (ok) {
+    filePath(path, sizeof(path), hex, "jpg");
+    File j = s_fs->open(path, "r");
+    const size_t n = j ? j.size() : 0;
+    ok = n >= 100 && n < BODY_CAP && j.read(s_body, n) == n && decodeTo(s_cache[s_target].px, (long)n, &r.pw, &r.ph);
+    if (j) j.close();
+  }
+  xSemaphoreGive(s_fsLock);
+  if (!ok) return;
+  r.photo = s_cache[s_target].px;
+  r.similar = true;
+  strlcpy(r.credit, rec.info.credit, sizeof(r.credit));
+  strlcpy(r.site, rec.info.site, sizeof(r.site));
+  strlcpy(r.link, rec.info.link, sizeof(r.link));
+  Serial.printf("PHOTO: %s shows %s meanwhile, the same type (%s)\n", r.hex, hex, r.type);
 }
 
 static void flushLocked() {
@@ -495,6 +553,7 @@ static bool takePhoto(AcInfo& r, HTTPClient& http, NetworkClientSecure& client, 
   r.photo = s_cache[s_target].px;
   r.pw = w;
   r.ph = h;
+  r.similar = false;
   strlcpy(r.credit, who[0] ? who : "unknown", sizeof(r.credit));
   strlcpy(r.site, site, sizeof(r.site));
   strlcpy(r.link, s_link, sizeof(r.link));
@@ -572,20 +631,24 @@ void Info_Service() {
   s_trouble = false;
 
   strlcpy(r.callsign, callsign, sizeof(r.callsign));
+  char type[sizeof(r.type)];
+  strlcpy(type, s_reqType, sizeof(type));
   const int stored = loadStored(r, callsign);
+  strlcpy(r.type, type, sizeof(r.type));
+  attachSimilar(r);                                      // only if it has no photo of its own to hand
   if (stored != 1) {
     r.loading = true;
-    if (stored == 2 && !publish(r)) return;              // the stored photo shows while the route comes
+    if (r.photo && !publish(r)) return;                  // a stored photo shows while the rest comes
     lookUpRoute(r, callsign);
     Serial.printf("ROUTE: %s %s -> %s\n", callsign, r.from[0] ? r.from : "?", r.to[0] ? r.to : "?");
     if (!publish(r)) return;                             // the route shows while the photo comes
     s_newJpgLen = 0;
     if (stored == 0) lookUpPhoto(r);
     r.loading = false;
-    if (r.photo || !s_trouble) saveLater(r, s_newJpgLen);
+    if ((r.photo && !r.similar) || !s_trouble) saveLater(r, s_newJpgLen);
   }
   xSemaphoreTake(s_lock, portMAX_DELAY);
-  if (r.photo || !s_trouble) {                           // a failed lookup is tried again next time
+  if ((r.photo && !r.similar) || !s_trouble) {           // a failed lookup is tried again next time
     Slot& c = s_cache[s_target];
     c.info = r;
     c.madeAt = c.usedAt = millis();
