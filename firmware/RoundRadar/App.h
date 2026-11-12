@@ -103,6 +103,14 @@ void Info_FlushSaves();               // write it now; the screen is disturbed w
 void Info_ListCard();                 // prints what is on the memory card
 void Info_WipeCard();                 // removes everything on the memory card
 void Info_EraseStore();               // factory reset: forget the stored photos and routes
+bool Info_LogLine(const char* name, const char* header, const char* line);   // adds a line to a file on the card; false if not written
+void Info_PrintFile(const char* name);   // prints a file from the card over USB
+void Info_DeleteFile(const char* name);
+
+void  Power_Tick(int backlight, int screen);   // every pass of the main loop
+float Power_Volts();
+int   Power_Percent();
+bool  Power_Charging();               // power is coming in (worked out, see Power.cpp)
 
 // -------------------------------------------------------------------- time --
 void Time_Begin();                    // time zone + read the clock chip

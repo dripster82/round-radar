@@ -69,6 +69,9 @@
 // The battery's voltage reaches this pin through a divider that passes one third of it
 // (200K over 100K on Waveshare's schematic).
 #define PIN_BATTERY 4
+// One line a minute goes here on the memory card: time, voltage, percent, whether power
+// is coming in, the screen turn and the backlight. Read it over USB with "log".
+#define BATTERY_LOG "battery.csv"
 // The whole picture is drawn turned by this many degrees, so the device sits with its
 // USB socket at the bottom (it is at about half past four with the picture unturned).
 // "rotate <degrees>" over USB changes it on one device; 0 costs no frame rate.

@@ -102,6 +102,11 @@ Screen mockups and the full flow between screens are in [mockups.html](mockups.h
   socket at the bottom (unturned, the socket is at about half past four). It is a build
   setting, `SCREEN_TURN_DEG` in `Config.h`; `rotate <degrees>` over USB changes it on one
   device. Turned, the scope runs at about 10 pictures a second; at 0 it runs at about 15.
+- **Battery.** The clock screen shows a battery with its percentage, and a lightning bolt
+  across it while power is coming in. With a memory card fitted, a line a minute goes to
+  `roundradar/battery.csv` (voltage, percent, power in, screen turn, backlight); over USB,
+  `log` prints it and `clear log` deletes it. Power coming in is worked out from the battery
+  voltage and from a computer on the socket, because the board has no pin for it.
 - **Wi-Fi setup** lists the networks nearby on the device, strongest first, five to a page.
   Tapping one opens the keypad for its password (lower case, capitals and symbols). The saved
   network is only replaced once the new one has joined. A **QR code** button on the list leads

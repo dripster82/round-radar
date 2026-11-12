@@ -14,6 +14,7 @@
 #include <SD_MMC.h>
 #include "Display_ST7701.h"
 #include "TCA9554.h"
+#include "Watchdog.h"
 #include <time.h>
 #include "esp_heap_caps.h"
 
@@ -413,6 +414,52 @@ static void emptyFolder(const char* path, int depth) {
 }
 
 // Sent over USB as "list card": what is in the card's top folder, and one level down.
+// Adds a line to a file in the card's folder, with a heading line if the file is new.
+// Only ever on a memory card: writing the chip's own storage disturbs the screen. Does
+// not wait if the card is busy with a photo; the caller tries again later.
+bool Info_LogLine(const char* name, const char* header, const char* line) {
+  if (!s_fsLock || xSemaphoreTake(s_fsLock, 0) != pdTRUE) return false;
+  bool ok = false;
+  if (store() && s_onCard) {
+    char path[48];
+    snprintf(path, sizeof(path), "%s/%s", CARD_DIR, name);
+    const bool fresh = !SD_MMC.exists(path);
+    File f = SD_MMC.open(path, FILE_APPEND);
+    if (f) {
+      if (fresh) f.println(header);
+      ok = f.println(line) > 0;
+      f.close();
+    }
+  }
+  xSemaphoreGive(s_fsLock);
+  return ok;
+}
+
+void Info_PrintFile(const char* name) {
+  xSemaphoreTake(s_fsLock, portMAX_DELAY);
+  char path[48];
+  snprintf(path, sizeof(path), "%s/%s", CARD_DIR, name);
+  File f = (store() && s_onCard) ? SD_MMC.open(path, "r") : File();
+  if (!f) Serial.printf("LOG: no %s on the card\n", name);
+  else {
+    Serial.printf("LOG: %s, %u bytes\n", name, (unsigned)f.size());
+    uint8_t buf[256];
+    for (int n; (n = f.read(buf, sizeof(buf))) > 0; ) { Serial.write(buf, n); Watchdog_Feed(); }
+    f.close();
+    Serial.println("LOG: end");
+  }
+  xSemaphoreGive(s_fsLock);
+}
+
+void Info_DeleteFile(const char* name) {
+  xSemaphoreTake(s_fsLock, portMAX_DELAY);
+  char path[48];
+  snprintf(path, sizeof(path), "%s/%s", CARD_DIR, name);
+  const bool gone = store() && s_onCard && SD_MMC.remove(path);
+  Serial.printf("LOG: %s %s\n", name, gone ? "deleted" : "not found");
+  xSemaphoreGive(s_fsLock);
+}
+
 void Info_ListCard() {
   xSemaphoreTake(s_fsLock, portMAX_DELAY);
   if (!store() || !s_onCard) { Serial.println("CARD: no card in use"); xSemaphoreGive(s_fsLock); return; }

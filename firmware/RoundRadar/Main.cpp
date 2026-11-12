@@ -34,14 +34,6 @@ static unsigned long s_buzzOffAt = 0;
 static char s_pinged[16][8];
 static int  s_pingedNext = 0;
 
-// The battery's voltage, averaged over a few readings to steady it. With no battery
-// fitted this is whatever the charger leaves on the empty socket, not a battery.
-static float batteryVolts() {
-  uint32_t mv = 0;
-  for (int i = 0; i < 8; i++) mv += analogReadMilliVolts(PIN_BATTERY);
-  return mv / 8 * 3 / 1000.0f;
-}
-
 // Sound the buzzer; the loop switches it off again.
 static void buzz(unsigned long ms) {
   TCA9554_SetPin(EXIO_BUZZER, true);
@@ -516,6 +508,7 @@ static bool factoryResetHeld() {
 // --------------------------------------------------------------------- loop --
 void App_Loop() {
   Watchdog_Feed();
+  if (s_scr != SC_BOOT) Power_Tick(s_blLast, (int)s_scr);
   // A line typed over USB. "wipe card" empties the memory card (for a card of unknown
   // history, when there is no reader to hand).
   static char cmd[16]; static int cmdN = 0;
@@ -526,7 +519,9 @@ void App_Loop() {
       if (!strcmp(cmd, "wipe card")) Info_WipeCard();
       else if (!strcmp(cmd, "list card")) Info_ListCard();
       else if (!strncmp(cmd, "rotate ", 7)) { cfg.rotate = (int16_t)(((atoi(cmd + 7) % 360) + 360) % 360); gfx->setTurn(cfg.rotate); Settings_Save(); Serial.printf("ROTATE: %d\n", cfg.rotate); }
-      else if (!strcmp(cmd, "battery")) Serial.printf("BATT: %.2f V\n", batteryVolts());
+      else if (!strcmp(cmd, "battery")) Serial.printf("BATT: %.2f V, %d%%, power in: %s\n", Power_Volts(), Power_Percent(), Power_Charging() ? "yes" : "no");
+      else if (!strcmp(cmd, "log")) Info_PrintFile(BATTERY_LOG);
+      else if (!strcmp(cmd, "clear log")) Info_DeleteFile(BATTERY_LOG);
       else if (!strcmp(cmd, "clear photos")) Info_EraseStore();
       cmdN = 0;
     } else if (cmdN < (int)sizeof(cmd) - 1) cmd[cmdN++] = ch;
@@ -637,7 +632,7 @@ void App_Loop() {
       char st[200];
       Net_Status(st, sizeof(st));
       Serial.printf("NET: %s\n", st);
-      Serial.printf("BATT: %.2f V\n", batteryVolts());
+      Serial.printf("BATT: %.2f V, %d%%, power in: %s\n", Power_Volts(), Power_Percent(), Power_Charging() ? "yes" : "no");
       slowLog = millis() - tl;                    // shown in the next line
       fpsT0 = now; frames = 0; maxGap = 0; slowDraw = 0; slowFlush = 0; slowTouch = 0; slowKeep = 0; slowData = 0;
       wifiDown = 0; panel0 = LCD_VsyncCount();

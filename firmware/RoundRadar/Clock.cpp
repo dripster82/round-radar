@@ -132,6 +132,33 @@ static void drawDigit(int x, int y, int w, int h, int d) {
     gfx->fillRoundRect(r[i][0], r[i][1], r[i][2], r[i][3], 5, (on >> i) & 1 ? C_GREEN : C_GHOST);
 }
 
+// Battery outline filled to its level, the percentage beside it, and a lightning bolt
+// across the battery while power is coming in.
+static void drawBattery(int cx, int y) {
+  const int pct = Power_Percent();
+  const bool low = pct <= 15 && !Power_Charging();
+  const uint16_t col = low ? C_AMBER : C_GREEN;
+  char txt[6];
+  snprintf(txt, sizeof(txt), "%d%%", pct);
+  const int bw = 40, bh = 20, gap = 10, tw = (int)strlen(txt) * 12;
+  const int x = cx - (bw + 4 + gap + tw) / 2;
+  gfx->drawRoundRect(x, y, bw, bh, 4, col);
+  gfx->drawRoundRect(x + 1, y + 1, bw - 2, bh - 2, 3, col);
+  gfx->fillRect(x + bw, y + 6, 4, 8, col);                           // the cap
+  const int fill = (bw - 8) * pct / 100;
+  if (fill > 0) gfx->fillRect(x + 4, y + 4, fill, bh - 8, low ? C_AMBER : C_MID);
+  UI_TextL(x + bw + 4 + gap, y + 2, txt, 2, col);
+  if (Power_Charging()) {
+    const int bx = x + bw / 2;
+    for (int pass = 0; pass < 2; pass++) {                           // a black edge first, so it stands out
+      const int g = pass ? 0 : 2;
+      const uint16_t c = pass ? C_AMBER : C_BLACK;
+      gfx->fillTriangle(bx + 4 + g, y - 5 - g, bx - 7 - g, y + 12, bx + 1, y + 12 + g, c);
+      gfx->fillTriangle(bx - 4 - g, y + 25 + g, bx + 7 + g, y + 8, bx - 1, y + 8 - g, c);
+    }
+  }
+}
+
 void Clock_Draw(int aircraft, bool wifi, bool dataFresh) {
   gfx->fillScreen(C_BLACK);
 
@@ -177,6 +204,8 @@ void Clock_Draw(int aircraft, bool wifi, bool dataFresh) {
   } else {
     UI_Text(240, 326, "SETTING TIME", 3, C_MID);
   }
+
+  drawBattery(240, 78);
 
   char foot[28];
   if (!wifi) {
