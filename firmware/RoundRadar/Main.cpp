@@ -28,6 +28,7 @@ static uint32_t s_snapVer = 0;
 static char     s_selHex[8] = "";
 static Aircraft s_selCache;
 static int      s_selMiss = 0;
+static bool     s_photoBig = false;    // the photo on page 1 is shown enlarged
 static int      s_detailPage = 0;      // 0 = figures, 1 = photo and route, 2 = link to the photo's page
 
 static unsigned long s_buzzOffAt = 0;
@@ -352,7 +353,7 @@ static void handleGesture(Gesture g, int x, int y) {
         if (Scope_HitTest(x, y, s_selHex)) {
           s_selMiss = 0;
           for (int i = 0; i < s_snapN; i++) if (!strcmp(s_snap[i].hex, s_selHex)) s_selCache = s_snap[i];
-          s_detailPage = 0;
+          s_detailPage = 0; s_photoBig = false;
           goScreen(SC_DETAIL);
         }
       } else if (g == G_LEFT || g == G_RIGHT) {
@@ -372,8 +373,14 @@ static void handleGesture(Gesture g, int x, int y) {
       }
       break;
     case SC_DETAIL:
-      if (g == G_TAP) { s_selHex[0] = '\0'; goScreen(SC_SCOPE); }
+      if (g == G_TAP) {
+        // A tap on the photo enlarges it and a tap anywhere puts it back; any other tap closes.
+        if (s_photoBig) s_photoBig = false;
+        else if (s_detailPage == 1 && Detail_PhotoAt(s_selCache, x, y)) { s_photoBig = true; Info_RequestBig(s_selCache.hex); }
+        else { s_selHex[0] = '\0'; goScreen(SC_SCOPE); }
+      }
       else if (g == G_LEFT || g == G_RIGHT) {
+        s_photoBig = false;
         // Left for the next page, right for the one before; round and round.
         s_detailPage = (s_detailPage + (g == G_LEFT ? 1 : DETAIL_PAGES - 1)) % DETAIL_PAGES;
         if (s_detailPage != 0) Info_Request(s_selCache.hex, s_selCache.callsign, s_selCache.type);   // fetched only when looked at
@@ -520,6 +527,7 @@ void App_Loop() {
       else if (!strcmp(cmd, "list card")) Info_ListCard();
       else if (!strncmp(cmd, "rotate ", 7)) { cfg.rotate = (int16_t)(((atoi(cmd + 7) % 360) + 360) % 360); gfx->setTurn(cfg.rotate); Settings_Save(); Serial.printf("ROTATE: %d\n", cfg.rotate); }
       else if (!strcmp(cmd, "battery")) Serial.printf("BATT: %.2f V, %d%%, power in: %s\n", Power_Volts(), Power_Percent(), Power_Charging() ? "yes" : "no");
+      else if (!strncmp(cmd, "big ", 4)) Info_RequestBig(cmd + 4);   // decode a stored photo at full size, to time it
       else if (!strcmp(cmd, "log")) Info_PrintFile(BATTERY_LOG);
       else if (!strcmp(cmd, "clear log")) Info_DeleteFile(BATTERY_LOG);
       else if (!strcmp(cmd, "clear photos")) Info_EraseStore();
@@ -643,7 +651,7 @@ void App_Loop() {
   lastDraw = now;
   fpsT0 = now; frames = 0;
   switch (s_scr) {
-    case SC_DETAIL:   Detail_Draw(s_selCache, s_selMiss > 0, s_detailPage); break;
+    case SC_DETAIL:   Detail_Draw(s_selCache, s_selMiss > 0, s_photoBig ? DETAIL_PAGES : s_detailPage); break;
     case SC_CLOCK:    Clock_Draw(s_snapN, wifi, Net_EverOk() && Net_DataAgeMs() < FETCH_BACKGROUND_MS + DATA_STALE_MS); break;
     case SC_SETTINGS: SettingsScreen_Draw(); break;
     case SC_NIGHT:    NightScreen_Draw(); break;

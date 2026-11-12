@@ -274,12 +274,27 @@ static uint16_t planeColour(int x, int y, uint8_t sweep, bool sweeping, bool sta
   return shade((uint8_t)(110 + ((145 * (255 - age)) >> 8)));       // 43%..100%
 }
 
-static void drawPlane(int x, int y, float trackDeg, bool hasTrack, uint16_t col) {
-  if (!hasTrack) { gfx->fillCircle(x, y, 5, col); return; }
-  const float t = trackDeg * 0.0174532925f, s = sinf(t), c = cosf(t);
-  // Arrowhead pointing along the track: nose, right wing, tail notch, left wing.
+static void drawPlane(int x, int y, float trackDeg, bool hasTrack, bool heli, uint16_t col) {
+  if (!hasTrack && !heli) { gfx->fillCircle(x, y, 5, col); return; }
+  const float t = hasTrack ? trackDeg * 0.0174532925f : 0, s = sinf(t), c = cosf(t);
   auto rx = [&](float px, float py) { return x + (int)lroundf(px * c - py * s); };
   auto ry = [&](float px, float py) { return y + (int)lroundf(px * s + py * c); };
+  if (heli) {
+    // Helicopter: a round body under an X of rotor blades, with a tail boom and tail
+    // rotor pointing back along the track (no tail when the track is not known).
+    auto bar = [&](float ax, float ay, float bx, float by) {
+      const int x0 = rx(ax, ay), y0 = ry(ax, ay), x1 = rx(bx, by), y1 = ry(bx, by);
+      gfx->drawLine(x0, y0, x1, y1, col);
+      gfx->drawLine(x0 + 1, y0, x1 + 1, y1, col);
+      gfx->drawLine(x0, y0 + 1, x1, y1 + 1, col);
+    };
+    gfx->fillCircle(x, y, 4, col);
+    bar(-8, -8, 8, 8);
+    bar(-8, 8, 8, -8);
+    if (hasTrack) { bar(0, 3, 0, 12); bar(-3, 12, 3, 12); }
+    return;
+  }
+  // Arrowhead pointing along the track: nose, right wing, tail notch, left wing.
   const int nx = rx(0, -11), ny = ry(0, -11), wx = rx(7, 8), wy = ry(7, 8);
   const int tx = rx(0, 4), ty = ry(0, 4), lx = rx(-7, 8), ly = ry(-7, 8);
   gfx->fillTriangle(nx, ny, wx, wy, tx, ty, col);
@@ -414,7 +429,7 @@ void Scope_Draw(const Aircraft* list, int n, bool wifi) {
         project(a.trailLat[k], a.trailLon[k], &tx, &ty);
         gfx->fillCircle((int)tx, (int)ty, 2, stale ? C_GREY : shade((uint8_t)(150 - k * 30)));
       }
-      drawPlane(x, y, a.track, a.hasTrack, col);
+      drawPlane(x, y, a.track, a.hasTrack, a.heli, col);
 
       const char* label = a.callsign[0] ? a.callsign : a.hex;
       const int tw = (int)strlen(label) * 12;
@@ -575,8 +590,65 @@ static void detailLink(const Aircraft& a) {
   UI_Text(CX, 378, in.site, 2, C_MID);
 }
 
+// The photo enlarged to the width of the screen, with its credit underneath. The round
+// glass trims the corners. It shows the small photo stretched (1.6 times, smoothed) at
+// once, then the stored original decoded at full size as soon as that is ready, which
+// is sharper. False if there is no photo to show.
+static bool detailBig(const Aircraft& a) {
+  AcInfo in;
+  Info_Get(&in);
+  uint16_t* fb = gfx->getFramebuffer();
+  if (strcmp(in.hex, a.hex) != 0 || !in.photo || !fb) return false;
+  int dw = in.pw * 8 / 5, dh = in.ph * 8 / 5, x0 = CX - dw / 2, y0 = CY - dh / 2;
+  const int k = Theme_Red() ? 179 : 256;                 // night red: full colour at 70%
+  const uint16_t* big; int bw, bh;
+  const bool sharp = !in.similar && Info_GetBig(a.hex, &big, &bw, &bh) && bw <= 480 && bh <= 480;
+  if (sharp) {
+    dw = bw; dh = bh; x0 = CX - dw / 2; y0 = CY - dh / 2;
+    for (int y = 0; y < dh; y++) {
+      const uint16_t* s = big + y * bw;
+      uint16_t* d = fb + (y0 + y) * 480 + x0;
+      if (k == 256) { memcpy(d, s, bw * 2); continue; }
+      for (int x = 0; x < bw; x++) {
+        const uint16_t p = s[x];
+        d[x] = (uint16_t)(((((p >> 11) & 0x1F) * k >> 8) << 11) | ((((p >> 5) & 0x3F) * k >> 8) << 5) | ((p & 0x1F) * k >> 8));
+      }
+    }
+  }
+  for (int y = 0; !sharp && y < dh; y++) {
+    if (y0 + y < 0 || y0 + y >= 480) continue;
+    const int sy = y * 160, iy = sy >> 8, fy = sy & 255;                 // 160/256 = 1/1.6
+    const uint16_t* r0 = in.photo + iy * in.pw;
+    const uint16_t* r1 = in.photo + min(iy + 1, in.ph - 1) * in.pw;
+    uint16_t* d = fb + (y0 + y) * 480;
+    for (int x = 0; x < dw; x++) {
+      const int px = x0 + x;
+      if (px < 0 || px >= 480) continue;
+      const int sx = x * 160, ix = sx >> 8, fx = sx & 255, ix1 = min(ix + 1, in.pw - 1);
+      const uint16_t p00 = r0[ix], p01 = r0[ix1], p10 = r1[ix], p11 = r1[ix1];
+      auto mix = [&](int sh, int mask) {
+        const int top = ((p00 >> sh) & mask) * (256 - fx) + ((p01 >> sh) & mask) * fx;
+        const int bot = ((p10 >> sh) & mask) * (256 - fx) + ((p11 >> sh) & mask) * fx;
+        return (((top * (256 - fy) + bot * fy) >> 16) * k) >> 8;
+      };
+      d[px] = (uint16_t)((mix(11, 0x1F) << 11) | (mix(5, 0x3F) << 5) | mix(0, 0x1F));
+    }
+  }
+  char buf[40];
+  if (in.similar) UI_Text(CX, y0 - 24, in.loading ? "Similar, loading image" : "Similar aircraft", 2, C_AMBER);
+  snprintf(buf, sizeof(buf), "Photo: %s", in.credit);
+  UI_Text(CX, y0 + dh + 8, strlen(buf) <= 24 ? buf : in.credit, 2, C_MID);   // the glass is narrow down here
+  return true;
+}
+
+bool Detail_PhotoAt(const Aircraft& a, int x, int y) {
+  AcInfo in;
+  Info_Get(&in);
+  return strcmp(in.hex, a.hex) == 0 && in.photo && abs(x - CX) <= PHOTO_W / 2 && y >= 72 && y < 72 + PHOTO_H;
+}
+
 // Second details page: a photo of this very aircraft, where it is flying from and to,
-// and who operates it.
+// and who operates it. Tapping the photo enlarges it.
 static void detailMore(const Aircraft& a) {
   AcInfo in;
   Info_Get(&in);
@@ -625,6 +697,7 @@ static void detailMore(const Aircraft& a) {
 void Detail_Draw(const Aircraft& a, bool lost, int page) {
   gfx->fillScreen(C_BLACK);
   char buf[40], num[16];
+  if (page == DETAIL_PAGES) { if (detailBig(a)) return; page = 1; }
   pageDots(page);
   if (page == 1) { detailMore(a); return; }
   if (page == 2) { detailLink(a); return; }

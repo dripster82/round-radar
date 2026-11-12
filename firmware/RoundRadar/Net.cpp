@@ -167,7 +167,7 @@ static bool fetchAircraft() {
 
   JsonDocument filter;
   JsonObject f = filter["ac"][0].to<JsonObject>();
-  static const char* KEYS[] = { "hex", "flight", "r", "t", "desc", "ownOp", "squawk", "alt_baro", "gs",
+  static const char* KEYS[] = { "hex", "flight", "r", "t", "desc", "ownOp", "squawk", "category", "alt_baro", "gs",
                                 "track", "true_heading", "baro_rate", "lat", "lon" };
   for (const char* k : KEYS) f[k] = true;
 
@@ -197,6 +197,18 @@ static bool fetchAircraft() {
     copyTrim(a.desc, sizeof(a.desc), p["desc"] | "");
     copyTrim(a.op, sizeof(a.op), p["ownOp"] | "");
     copyTrim(a.squawk, sizeof(a.squawk), p["squawk"] | "");
+    // A helicopter says so in its category (A7). Many send no category, so the type's
+    // name is tried as well.
+    a.heli = strcmp(p["category"] | "", "A7") == 0;
+    static const char* ROTOR[] = { "HELICOPTER", "EUROCOPTER", "AGUSTA", "SIKORSKY", "ROBINSON" };
+    for (const char* k : ROTOR) if (!a.heli && strstr(a.desc, k)) a.heli = true;
+    static char said[8][8]; static int saidAt = 0;
+    bool told = false;
+    for (auto& h : said) if (!strcmp(h, a.hex)) told = true;
+    if (a.heli && !told) {                                   // say so once each, to show the icon's reason
+      strlcpy(said[saidAt], a.hex, sizeof(said[0])); saidAt = (saidAt + 1) % 8;
+      Serial.printf("HELI: %s %s, category %s\n", a.hex, a.desc, p["category"] | "none");
+    }
     if (!a.hex[0]) continue;
     carryTrail(a);
     n++;

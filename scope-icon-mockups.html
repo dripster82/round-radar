@@ -1,0 +1,82 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Round Radar: helicopter icon options</title>
+<style>
+  body { margin: 0; padding: 20px; background: #111; color: #ddd; font: 16px/1.4 -apple-system, sans-serif; }
+  h1 { font-size: 20px; margin: 0 0 4px; } p { margin: 0 0 16px; color: #999; }
+  .row { display: flex; align-items: center; gap: 18px; margin-bottom: 14px; }
+  .name { width: 190px; } .name b { display: block; color: #fff; font-size: 17px; } .name span { color: #999; font-size: 13px; }
+  canvas { image-rendering: pixelated; background: #000; border-radius: 6px; }
+  .cap { color: #777; font-size: 12px; margin: 0 0 6px 208px; }
+</style>
+<h1>Helicopter icon options</h1>
+<p>Drawn pixel for pixel as the screen would show them. Each strip shows headings north, north-east, east and south-south-west,
+then one with no heading known. Left: enlarged three times. Middle: actual size on the scope with a callsign. Right: night red.</p>
+<div id="rows"></div>
+<script>
+// Pixel drawing that matches the device's routines closely enough to judge shapes: no smoothing.
+function Buf(w, h) { this.w = w; this.h = h; this.d = new Uint8Array(w * h); }
+Buf.prototype.px = function (x, y) { x = Math.round(x); y = Math.round(y); if (x >= 0 && y >= 0 && x < this.w && y < this.h) this.d[y * this.w + x] = 1; };
+Buf.prototype.disc = function (cx, cy, r) { for (let y = -r; y <= r; y++) for (let x = -r; x <= r; x++) if (x * x + y * y <= r * r + r * 0.8) this.px(cx + x, cy + y); };
+Buf.prototype.ring = function (cx, cy, r) { for (let a = 0; a < 360; a += 2) { const t = a * Math.PI / 180; this.px(cx + r * Math.cos(t), cy + r * Math.sin(t)); this.px(cx + (r - 1) * Math.cos(t), cy + (r - 1) * Math.sin(t)); } };
+Buf.prototype.line = function (x0, y0, x1, y1, thick) {
+  const n = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0), 1);
+  for (let i = 0; i <= n; i++) { const x = x0 + (x1 - x0) * i / n, y = y0 + (y1 - y0) * i / n; this.px(x, y); if (thick) { this.px(x + 1, y); this.px(x, y + 1); } }
+};
+Buf.prototype.tri = function (ax, ay, bx, by, cx, cy) {
+  const minx = Math.floor(Math.min(ax, bx, cx)), maxx = Math.ceil(Math.max(ax, bx, cx)), miny = Math.floor(Math.min(ay, by, cy)), maxy = Math.ceil(Math.max(ay, by, cy));
+  const e = (px, py, qx, qy, x, y) => (qx - px) * (y - py) - (qy - py) * (x - px);
+  for (let y = miny; y <= maxy; y++) for (let x = minx; x <= maxx; x++) {
+    const a = e(ax, ay, bx, by, x, y), b = e(bx, by, cx, cy, x, y), c = e(cx, cy, ax, ay, x, y);
+    if ((a >= 0 && b >= 0 && c >= 0) || (a <= 0 && b <= 0 && c <= 0)) this.px(x, y);
+  }
+};
+// Local shape coordinates: x to the right, y towards the tail (so -y is the nose), turned to the heading.
+function turner(x, y, deg) { const t = deg * Math.PI / 180, s = Math.sin(t), c = Math.cos(t); return (px, py) => [x + Math.round(px * c - py * s), y + Math.round(px * s + py * c)]; }
+
+const ICONS = [
+  { name: "Plane (as now)", note: "for comparison", draw(b, x, y, deg) {
+      if (deg == null) return b.disc(x, y, 5);
+      const R = turner(x, y, deg), n = R(0, -11), w = R(7, 8), t = R(0, 4), l = R(-7, 8);
+      b.tri(...n, ...w, ...t); b.tri(...n, ...l, ...t); } },
+  { name: "1. Rotor cross", note: "body, tail and an X of blades", draw(b, x, y, deg) {
+      if (deg == null) { b.disc(x, y, 4); b.line(x - 8, y - 8, x + 8, y + 8, 1); b.line(x - 8, y + 8, x + 8, y - 8, 1); return; }
+      const R = turner(x, y, deg);
+      b.disc(x, y, 4); b.line(...R(0, 3), ...R(0, 12), 1); b.line(...R(-3, 12), ...R(3, 12), 1);
+      b.line(...R(-8, -8), ...R(8, 8), 1); b.line(...R(-8, 8), ...R(8, -8), 1); } },
+  { name: "2. Rotor ring", note: "a ring for the spinning rotor, with a tail", draw(b, x, y, deg) {
+      b.ring(x, y, 9); b.disc(x, y, 3);
+      if (deg == null) return;
+      const R = turner(x, y, deg);
+      b.line(...R(0, 8), ...R(0, 14), 1); b.line(...R(-3, 14), ...R(3, 14), 1); } },
+  { name: "3. Teardrop", note: "tapered body with an X of blades", draw(b, x, y, deg) {
+      if (deg == null) { b.disc(x, y, 5); b.line(x - 9, y - 9, x + 9, y + 9, 0); b.line(x - 9, y + 9, x + 9, y - 9, 0); return; }
+      const R = turner(x, y, deg), c = R(0, -3);
+      b.disc(c[0], c[1], 5); b.tri(...R(-5, -3), ...R(5, -3), ...R(0, 13));
+      b.line(...R(-9, -12), ...R(9, 6), 0); b.line(...R(-9, 6), ...R(9, -12), 0); } },
+  { name: "4. Three blades", note: "body, tail and three blades", draw(b, x, y, deg) {
+      const d = deg == null ? 0 : deg, R = turner(x, y, d);
+      b.disc(x, y, 4);
+      if (deg != null) { b.line(...R(0, 3), ...R(0, 12), 1); b.line(...R(-3, 12), ...R(3, 12), 1); }
+      for (const a of [30, 150, 270]) { const t = a * Math.PI / 180; b.line(...R(0, 0), ...R(10 * Math.cos(t), 10 * Math.sin(t)), 1); } } },
+];
+
+// The device's 6x8 font is not needed to judge icons; a plain block label stands in for the callsign's size.
+function strip(icon, scale, rgb, label) {
+  const heads = [0, 45, 90, 200, null], w = 64 * heads.length, h = label ? 62 : 44, b = new Buf(w, h);
+  heads.forEach((d, i) => icon.draw(b, 32 + i * 64, 22, d));
+  const c = document.createElement("canvas"); c.width = w; c.height = h; c.style.width = w * scale + "px"; c.style.height = h * scale + "px";
+  const g = c.getContext("2d"), im = g.createImageData(w, h);
+  for (let i = 0; i < w * h; i++) { const o = i * 4, on = b.d[i]; im.data[o] = on ? rgb[0] : 0; im.data[o + 1] = on ? rgb[1] : 0; im.data[o + 2] = on ? rgb[2] : 0; im.data[o + 3] = 255; }
+  g.putImageData(im, 0, 0);
+  if (label) { g.fillStyle = `rgb(${rgb})`; g.font = "bold 16px Menlo, monospace"; g.textAlign = "center"; heads.forEach((d, i) => g.fillText(i % 2 ? "GNHAA" : "HLE61", 32 + i * 64, 56)); }
+  return c;
+}
+const rows = document.getElementById("rows");
+for (const icon of ICONS) {
+  const r = document.createElement("div"); r.className = "row";
+  r.innerHTML = `<div class="name"><b>${icon.name}</b><span>${icon.note}</span></div>`;
+  r.append(strip(icon, 3, [57, 255, 123], false), strip(icon, 1, [57, 255, 123], true), strip(icon, 1, [255, 40, 24], true));
+  rows.append(r);
+}
+</script>

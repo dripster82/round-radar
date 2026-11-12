@@ -74,17 +74,39 @@ static volatile bool s_saveWaiting = false;
 
 static bool store();
 
+// The enlarged photo: one at a time, decoded again from the stored original so it is
+// as sharp as the source allows (the small one is the source shrunk to fit the page).
+static uint16_t* s_bigPx = nullptr;
+static char      s_bigHex[8] = "", s_bigReq[8] = "";
+static int16_t   s_bigW = 0, s_bigH = 0;
+static volatile bool s_bigPending = false;
+
 void Info_Begin() {
   s_lock = xSemaphoreCreateMutex();
   s_fsLock = xSemaphoreCreateMutex();
   s_saveJpg = (uint8_t*)heap_caps_malloc(BODY_CAP, MALLOC_CAP_SPIRAM);
   s_body = (uint8_t*)heap_caps_malloc(BODY_CAP, MALLOC_CAP_SPIRAM);
+  s_bigPx = (uint16_t*)heap_caps_malloc(BIG_W * BIG_H * 2, MALLOC_CAP_SPIRAM);
   store();                                               // so the log says at start-up which storage is in use
   for (auto& c : s_cache) { c.px = (uint16_t*)heap_caps_malloc(PHOTO_W * PHOTO_H * 2, MALLOC_CAP_SPIRAM); c.valid = false; }
   memset(&s_info, 0, sizeof(s_info));
 }
 
-bool Info_Pending() { return s_pending; }
+bool Info_Pending() { return s_pending || s_bigPending; }
+
+void Info_RequestBig(const char* hex) {
+  xSemaphoreTake(s_lock, portMAX_DELAY);
+  if (strcmp(s_bigHex, hex) != 0) { strlcpy(s_bigReq, hex, sizeof(s_bigReq)); s_bigPending = true; }
+  xSemaphoreGive(s_lock);
+}
+
+bool Info_GetBig(const char* hex, const uint16_t** px, int* w, int* h) {
+  xSemaphoreTake(s_lock, portMAX_DELAY);
+  const bool ok = s_bigPx && s_bigHex[0] && strcmp(s_bigHex, hex) == 0;
+  if (ok) { *px = s_bigPx; *w = s_bigW; *h = s_bigH; }
+  xSemaphoreGive(s_lock);
+  return ok;
+}
 
 void Info_Get(AcInfo* out) {
   xSemaphoreTake(s_lock, portMAX_DELAY);
@@ -166,7 +188,8 @@ static long get(HTTPClient& http, NetworkClientSecure& client, const char* url, 
 // Only the network task touches the storage.
 #define REC_MAGIC 0x52523034UL
 struct Rec { uint32_t magic; uint32_t savedAt; uint8_t hasPhoto; AcInfo info; };
-static bool decodeTo(uint16_t* dst, long len, int16_t* outW, int16_t* outH);
+static bool decodeFit(uint16_t* dst, long len, int maxW, int maxH, int16_t* outW, int16_t* outH);
+static bool decodeTo(uint16_t* dst, long len, int16_t* outW, int16_t* outH) { return decodeFit(dst, len, PHOTO_W, PHOTO_H, outW, outH); }
 
 
 // A memory card is used if one is fitted, otherwise the chip's own storage. The card
@@ -554,7 +577,8 @@ static void lookUpRoute(AcInfo& r, const char* callsign) {
 
 // ------------------------------------------------------------------- photo --
 // Decode the JPEG in s_body and scale it, smoothly, to fit the photo area.
-static bool decodeTo(uint16_t* dst, long len, int16_t* outW, int16_t* outH) {
+// Decodes the JPEG in s_body and scales it, smoothed, to fit maxW x maxH.
+static bool decodeFit(uint16_t* dst, long len, int maxW, int maxH, int16_t* outW, int16_t* outH) {
   int w = 0, h = 0, n = 0;
   if (!stbi_info_from_memory(s_body, (int)len, &w, &h, &n) || w < 8 || h < 8 || w > RAW_MAX || h > RAW_MAX) {
     Serial.printf("PHOTO: not a picture this can read (%d x %d)\n", w, h);
@@ -563,7 +587,7 @@ static bool decodeTo(uint16_t* dst, long len, int16_t* outW, int16_t* outH) {
   uint8_t* rgb = stbi_load_from_memory(s_body, (int)len, &w, &h, &n, 3);
   if (!rgb) { Serial.println("PHOTO: decode failed"); return false; }
 
-  const float k = fminf((float)PHOTO_W / w, (float)PHOTO_H / h);
+  const float k = fminf((float)maxW / w, (float)maxH / h);
   const int dw = (int)(w * k), dh = (int)(h * k);
   for (int y = 0; y < dh; y++) {
     const float fy = fmaxf(0.0f, fminf((y + 0.5f) / k - 0.5f, h - 1.0f));
@@ -658,8 +682,38 @@ static void lookUpPhoto(AcInfo& r) {
 }
 
 // Runs on the network task.
+// Reads an aircraft's stored original and decodes it at full size for the enlarged view.
+static void serviceBig() {
+  char hex[8], path[48];
+  xSemaphoreTake(s_lock, portMAX_DELAY);
+  s_bigPending = false;
+  strlcpy(hex, s_bigReq, sizeof(hex));
+  s_bigHex[0] = '\0';                                     // the buffer is about to change
+  xSemaphoreGive(s_lock);
+  if (!s_bigPx) return;
+  size_t n = 0;
+  bool got = false;
+  xSemaphoreTake(s_fsLock, portMAX_DELAY);
+  if (store()) {
+    filePath(path, sizeof(path), hex, "jpg");
+    File j = s_fs->open(path, "r");
+    if (j) { n = j.size(); got = n >= 100 && n < BODY_CAP && j.read(s_body, n) == n; j.close(); }
+  }
+  xSemaphoreGive(s_fsLock);
+  int16_t w = 0, h = 0;
+  if (!got) { Serial.printf("PHOTO: %s has no stored original to enlarge\n", hex); return; }
+  const unsigned long t0 = millis();
+  if (!decodeFit(s_bigPx, (long)n, BIG_W, BIG_H, &w, &h)) return;
+  xSemaphoreTake(s_lock, portMAX_DELAY);
+  s_bigW = w; s_bigH = h;
+  strlcpy(s_bigHex, hex, sizeof(s_bigHex));
+  xSemaphoreGive(s_lock);
+  Serial.printf("PHOTO: %s enlarged to %dx%d in %lu ms\n", hex, w, h, millis() - t0);
+}
+
 void Info_Service() {
-  if (!s_body || !s_cache[CACHE_N - 1].px) { s_pending = false; return; }
+  if (!s_body || !s_cache[CACHE_N - 1].px) { s_pending = false; s_bigPending = false; return; }
+  if (s_bigPending) { serviceBig(); if (!s_pending) return; }
   AcInfo r;
   char callsign[sizeof(s_reqCall)];
   xSemaphoreTake(s_lock, portMAX_DELAY);

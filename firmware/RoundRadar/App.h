@@ -49,6 +49,7 @@ struct Aircraft {
   float gsKt;
   float baroRate;       // ft/min
   bool  hasTrack;
+  bool  heli;           // a helicopter, by the feed's category or the type's name
   char  callsign[10];
   char  hex[8];
   char  type[10];
@@ -97,6 +98,8 @@ void Info_Begin();
 void Info_Request(const char* hex, const char* callsign, const char* type);   // looked up in the background
 void Info_Get(AcInfo* out);
 bool Info_Pending();
+void Info_RequestBig(const char* hex); // decode this aircraft's stored photo at full size, in the background
+bool Info_GetBig(const char* hex, const uint16_t** px, int* w, int* h);   // true once that is ready
 void Info_Service();                  // network task only
 bool Info_SaveWaiting();              // something looked up is waiting to be written to storage
 void Info_FlushSaves();               // write it now; the screen is disturbed while it runs
@@ -131,8 +134,11 @@ void Scope_ThemeChanged();            // rebuild the palette
 void Scope_Invalidate();              // range or position changed
 void Scope_Draw(const Aircraft* list, int n, bool wifi);
 bool Scope_HitTest(int x, int y, char* hexOut);
+#define BIG_W 480                      // the enlarged photo fits in this
+#define BIG_H 320
 #define DETAIL_PAGES 3
-void Detail_Draw(const Aircraft& a, bool lost, int page);   // 0 = figures, 1 = photo and route, 2 = QR code to the photo's page
+void Detail_Draw(const Aircraft& a, bool lost, int page);   // 0 = figures, 1 = photo and route, 2 = QR code to the photo's page, DETAIL_PAGES = the photo enlarged
+bool Detail_PhotoAt(const Aircraft& a, int x, int y);       // is a photo showing under this point of page 1
 
 // ------------------------------------------------------------------- clock --
 void Clock_Draw(int aircraft, bool wifi, bool dataFresh);
